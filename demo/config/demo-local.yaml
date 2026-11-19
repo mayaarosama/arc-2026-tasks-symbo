@@ -1,0 +1,67 @@
+# Real models on the operator laptop: the single-model set (SD 1.5, Stable Fast 3D, Stable Audio 3
+# Small) on its GTX 1050 Ti and on its CPU. Not the show: a rehearsal of the real code path
+# (loading, seeding, timing, budget, replay, stage). Worker commands: config/worker-local-*.yaml.
+#   GPU workers: t2i :9201  i23d :9211  music :9221
+#   CPU workers: t2i :9202  i23d :9212  music :9222
+extends: demo.yaml
+session_dir: session-local
+replay_dir: replay-local
+inputs:                # shallow merge: list every task, not only the one that differs
+  t2i: data/t2i/stage_prompts.json
+  i23d: data/i23d/stage_objects.json
+  music: data/music/stage_inputs.json
+machines:
+  - id: laptop-gpu
+    label: "Laptop GPU"
+    hardware: "GTX 1050 Ti · 4 GB"
+    color: "#76b900"
+    workers: {t2i: http://127.0.0.1:9201, i23d: http://127.0.0.1:9211, music: http://127.0.0.1:9221}
+  - id: laptop-cpu
+    label: "Laptop CPU"
+    hardware: "6 cores · 16 GB RAM"
+    color: "#f0a640"
+    show_full_recording: true
+    workers: {t2i: http://127.0.0.1:9202, i23d: http://127.0.0.1:9212, music: http://127.0.0.1:9222}
+settings:
+  t2i:
+    iso_quality:   # identical everywhere: proves same seed -> same image on CPU and GPU
+      all: {model: sd15, width: 512, height: 512, steps: 25, guidance: 7.5, batch: 2}
+    iso_time:
+      laptop-gpu: {model: sd15, width: 512, height: 512, steps: 30, guidance: 7.5, batch: 4}
+      laptop-cpu: {model: sd15, width: 512, height: 512, steps: 15, guidance: 7.5, batch: 1}
+  i23d:   # SF3D on both, same settings as demo.yaml
+    iso_time:
+      all:        {model: sf3d, texture_size: 1024}
+      laptop-cpu: {model: sf3d, texture_size: 512}
+  music:  # Stable Audio 3 Small on both, same settings as demo.yaml
+    iso_time:
+      all: {model: sa3-small-music, length_s: 30, steps: 8, repeat_until_budget: true}
+segments:
+  - id: local-q
+    title: "Same image, different time"
+    task: t2i
+    protocol: iso_quality
+    budget_seconds: null
+    inputs: [t2i-01, t2i-02, t2i-03]
+    caption: "Identical model, settings and seed on both. Only the clock differs."
+  - id: local-t
+    title: "Same minute, different results"
+    task: t2i
+    protocol: iso_time
+    budget_seconds: 60
+    inputs: [t2i-01, t2i-02, t2i-03, live]
+    caption: "Each machine ran what it could finish in {budget} seconds."
+  - id: local-3d
+    title: "Same object, two devices"
+    task: i23d
+    protocol: iso_time
+    budget_seconds: 60
+    inputs: [i23d-01]
+    caption: "Stable Fast 3D on both, {budget} seconds each."
+  - id: local-music
+    title: "Music in a minute"
+    task: music
+    protocol: iso_time
+    budget_seconds: 60
+    inputs: [mus-01]
+    caption: "Stable Audio 3 Small on both: complete 30-second tracks in {budget} seconds."

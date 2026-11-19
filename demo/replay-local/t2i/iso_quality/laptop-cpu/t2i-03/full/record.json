@@ -1,0 +1,74 @@
+{
+  "task": "t2i",
+  "protocol": "iso_quality",
+  "machine": "laptop-cpu",
+  "input_id": "t2i-03",
+  "settings": {
+    "model": "sd15",
+    "width": 512,
+    "height": 512,
+    "steps": 25,
+    "guidance": 7.5,
+    "batch": 2
+  },
+  "settings_hash": "cb5bde895e",
+  "files": [
+    "5e531b8a937442bf9d39984dd32847cb-0.png",
+    "5e531b8a937442bf9d39984dd32847cb-1.png"
+  ],
+  "result": {
+    "run_id": "5e531b8a937442bf9d39984dd32847cb",
+    "machine": "laptop-cpu",
+    "task": "t2i",
+    "model": "sd15",
+    "model_repo": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+    "input_id": "t2i-03",
+    "protocol": "iso_quality",
+    "status": "ok",
+    "message": "",
+    "outputs": [
+      "5e531b8a937442bf9d39984dd32847cb-0.png",
+      "5e531b8a937442bf9d39984dd32847cb-1.png"
+    ],
+    "output_times": [
+      174.173,
+      346.893
+    ],
+    "completed": 2,
+    "requested": 2,
+    "load_seconds": 0.0,
+    "first_output_seconds": 174.173,
+    "all_outputs_seconds": 346.893,
+    "generation_seconds": null,
+    "export_seconds": null,
+    "elapsed_seconds": 346.894,
+    "peak_memory_mb": 6902.9,
+    "peak_reserved_mb": null,
+    "progress": {
+      "step": 26,
+      "steps": 25,
+      "done": 2,
+      "total": 2,
+      "stage": "denoising"
+    },
+    "settings": {
+      "width": 512,
+      "height": 512,
+      "steps": 25,
+      "guidance": 7.5,
+      "batch": 2,
+      "seed": 1003,
+      "precision": "float32",
+      "t5": "n/a",
+      "devices": 1,
+      "micro_batch": 1,
+      "offload": "none",
+      "seeding": "cpu generator, seed+i per image"
+    }
+  },
+  "score": null,
+  "runs": 1,
+  "times": [
+    346.893
+  ]
+}

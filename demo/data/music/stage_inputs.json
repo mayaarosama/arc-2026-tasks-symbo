@@ -1,0 +1,6 @@
+[
+  {"id": "mus-01", "mode": "text", "seed": 2001, "length_s": 60, "label": "Oud", "prompt": "Slow oud melody over soft percussion, warm reverb"},
+  {"id": "mus-02", "mode": "text", "seed": 2002, "length_s": 60, "label": "Synth", "prompt": "Upbeat electronic track with a bright synth lead, 120 BPM"},
+  {"id": "mus-03", "mode": "continuation", "seed": 2003, "length_s": 60, "label": "Piano continuation", "audio": "data/music/seed-piano-10s.wav", "prompt": "Continue in an orchestral arrangement",
+   "_todo": "Record or source the 10 s piano clip (own recording or CC0) and record its licence here."}
+]

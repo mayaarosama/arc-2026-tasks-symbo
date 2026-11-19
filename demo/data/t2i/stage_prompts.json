@@ -1,0 +1,9 @@
+[
+  {"id": "t2i-01", "seed": 1001, "label": "Interior", "exposes": "Text rendering, counting, reflections",
+   "prompt": "A sunlit modern interior with a glass coffee table, a brass floor lamp, and a bookshelf of five legible book spines"},
+  {"id": "t2i-02", "seed": 1002, "label": "City at dusk", "exposes": "Lighting, reflections, scene coherence",
+   "prompt": "A dense city street at dusk in the rain, neon shop signs reflected in the puddles"},
+  {"id": "t2i-03", "seed": 1003, "label": "Pomegranate", "exposes": "Fine material detail, translucency",
+   "prompt": "A single ripe pomegranate split open on a marble countertop, water droplets on the skin"},
+  {"id": "live", "seed": 4242, "label": "Audience prompt", "exposes": "Unrehearsed input", "prompt": null}
+]

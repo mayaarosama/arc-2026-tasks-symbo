@@ -1,0 +1,45 @@
+[
+  {
+    "id": "i23d-01",
+    "tier": "easy",
+    "label": "Plant pot",
+    "gso": "Ecoforms_Plant_Pot_GP9_SAND",
+    "alternates": [
+      "Cole_Hardware_Flower_Pot_1025",
+      "Womens_Bluefish_2Eye_Boat_Shoe_in_Tan"
+    ],
+    "exposes": "Baseline: every machine should produce something",
+    "input": "data/i23d/inputs/i23d-01.png",
+    "truth": "data/i23d/gso/Ecoforms_Plant_Pot_GP9_SAND/meshes/model.obj",
+    "seed": 3001
+  },
+  {
+    "id": "i23d-02",
+    "tier": "medium",
+    "label": "Patterned ceramic pot",
+    "gso": "Down_To_Earth_Ceramic_Orchid_Pot_Asst_Blue",
+    "alternates": [
+      "Threshold_Porcelain_Coffee_Mug_All_Over_Bead_White",
+      "Room_Essentials_Mug_White_Yellow"
+    ],
+    "exposes": "Texture fidelity and material quality",
+    "input": "data/i23d/inputs/i23d-02.png",
+    "truth": "data/i23d/gso/Down_To_Earth_Ceramic_Orchid_Pot_Asst_Blue/meshes/model.obj",
+    "seed": 3002
+  },
+  {
+    "id": "i23d-03",
+    "tier": "hard",
+    "label": "Patterned mug",
+    "gso": "ACE_Coffee_Mug_Kristen_16_oz_cup",
+    "alternates": [
+      "Threshold_Porcelain_Teapot_White",
+      "Cole_Hardware_Mug_Classic_Blue"
+    ],
+    "exposes": "Thin geometry (handle) plus a printed pattern, where low tiers break down",
+    "input": "data/i23d/inputs/i23d-03.png",
+    "truth": "data/i23d/gso/ACE_Coffee_Mug_Kristen_16_oz_cup/meshes/model.obj",
+    "seed": 3003,
+    "_why": "Teapot was the first pick, but from the fixed camera its spout is hidden and its white glaze carries no texture."
+  }
+]

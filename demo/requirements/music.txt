@@ -1,0 +1,18 @@
+# Music worker env (every machine): Stable Audio 3.0. The library is not on PyPI:
+#   git clone https://github.com/Stability-AI/stable-audio-3 third_party/stable-audio-3   (checked at 790793b)
+# Install torch + torchaudio 2.7.1 FIRST (the library pins them), from the right index:
+#   CPU:      pip install torch==2.7.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cpu
+#   any GPU:  pip install torch==2.7.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu118  (cu126/cu128 for newer cards)
+# then:  pip install -r requirements/music.txt  &&  pip install --no-deps -e third_party/stable-audio-3
+# Small-Music needs nothing else. Medium (demo-full.yaml, DGX/workstation) also needs flash-attn 2:
+# see the "Flash Attention" section of third_party/stable-audio-3/README.md.
+-r worker-base.txt
+einops>=0.8.2
+einops-exts>=0.0.4
+numpy>=2.2.6
+packaging>=24
+safetensors>=0.7.0
+tqdm>=4.67
+huggingface_hub>=1.7.1
+transformers>=5.8.0
+soundfile>=0.13.1

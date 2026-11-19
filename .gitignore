@@ -1,0 +1,4 @@
+# Secrets — never commit
+config.txt
+.env
+*.env

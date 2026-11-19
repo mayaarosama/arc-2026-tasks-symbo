@@ -1,0 +1,127 @@
+# FULL model matrix — the largest model each machine can run, per task. Not the default show:
+# config/demo.yaml runs one model per task on every machine. Switch to this file once the weights
+# below are on each machine (README "Full model matrix"):
+#   python -m arcdemo.conductor --config config/demo-full.yaml
+#   python scripts/download_weights.py --config config/demo-full.yaml --machine <id> --task <task>
+# Every value marked TBC is a starting point that the rehearsal pass replaces.
+
+session_dir: session          # live outputs + runs.jsonl for this show
+replay_dir: replay            # rehearsal outputs used for REPLAY cells
+token_env: ARC_DEMO_TOKEN     # shared secret sent to workers (X-Demo-Token); unset = no auth
+
+# Seconds after the budget before a silent worker is treated as failed and REPLAY engages.
+timeout_grace_seconds: 15
+# A worker that cannot be polled for this long is treated as unreachable.
+unreachable_after_seconds: 6
+
+machines:
+  - id: dgx
+    label: "DGX H200"
+    hardware: "8× H200 · 141 GB each (TBC)"
+    color: "#76b900"
+    workers:
+      t2i: http://dgx.local:8101
+      i23d: http://dgx.local:8102
+      music: http://dgx.local:8103
+  - id: workstation
+    label: "Workstation"
+    hardware: "1 GPU · 16 GB VRAM"
+    color: "#4aa8ff"
+    one_task_at_a_time: true   # 16 GB: "Prepare" unloads the other task's worker first
+    workers:
+      t2i: http://workstation.local:8101
+      i23d: http://workstation.local:8102
+      music: http://workstation.local:8103
+  - id: cpu
+    label: "CPU only"
+    hardware: "No GPU · 16 GB RAM"
+    color: "#f0a640"
+    one_task_at_a_time: true
+    show_full_recording: true  # time up / stopped / down: show the full rehearsal run + its time
+    workers:
+      t2i: http://cpu.local:8101
+      i23d: http://cpu.local:8102
+      music: http://cpu.local:8103
+
+inputs:
+  t2i: data/t2i/stage_prompts.json
+  i23d: data/i23d/stage_objects.json
+  music: data/music/stage_inputs.json
+
+# ------------------------------------------------------------------------------------------
+# Settings matrix. "all" applies to every machine; a machine key overrides it.
+# mode: live | replay  (replay = always serve the rehearsal record, badged REPLAY)
+# ------------------------------------------------------------------------------------------
+settings:
+  t2i:
+    iso_quality:
+      # The proposal's iso-quality row (SD3.5 Large, batch 8) cannot load on the workstation
+      # without offload, nor on a 16 GB CPU box at all. Medium without T5 is the largest
+      # configuration that is *identical* on all three machines.
+      all: {model: sd35-medium-not5, width: 1024, height: 1024, steps: 28, guidance: 4.5, batch: 8}
+    iso_time:
+      dgx:         {model: sd35-large,         width: 1024, height: 1024, steps: 40, guidance: 4.5, batch: 8}
+      workstation: {model: sd35-medium-t5int8, width: 1024, height: 1024, steps: 28, guidance: 4.5, batch: 1}
+      cpu:         {model: sd35-medium-not5,   width: 512,  height: 512,  steps: 12, guidance: 4.5, batch: 1}
+  i23d:
+    iso_quality:
+      all:         {model: trellis2-4b, resolution: 1024, texture_size: 2048, decimation: 300000}
+      workstation: {model: trellis2-4b, prepare: false}   # loads inside the job, so the audience sees the OOM
+      cpu:         {model: trellis2-4b, mode: replay}     # TRELLIS has no CPU path: show as "cannot run"
+    iso_time:
+      dgx:         {model: trellis2-4b,         resolution: 1536, texture_size: 2048, decimation: 300000}
+      workstation: {model: trellis-image-large, ss_steps: 12, slat_steps: 12, texture_size: 1024}
+      cpu:         {model: sf3d, texture_size: 512, mode: live}   # SF3D runs on CPU natively — measure before assuming replay
+  music:
+    iso_time:
+      dgx:         {model: sa3-medium,      length_s: 60, steps: 8, repeat_until_budget: true}
+      workstation: {model: sa3-medium,      length_s: 60, steps: 8, repeat_until_budget: true}
+      cpu:         {model: sa3-small-music, length_s: 60, steps: 8, repeat_until_budget: true}
+
+# ------------------------------------------------------------------------------------------
+# Run of show. The operator page shows these as buttons, in order.
+# ------------------------------------------------------------------------------------------
+segments:
+  - id: seg0
+    title: "Three machines, one task"
+    task: t2i
+    protocol: iso_time
+    budget_seconds: 60
+    inputs: [t2i-01]
+    warmup: true
+    caption: "Warm-up run. Same prompt, same seed, three machines."
+  - id: seg1
+    title: "The stopwatch"
+    task: t2i
+    protocol: iso_quality
+    budget_seconds: null           # no cutoff: every machine runs to completion
+    inputs: [t2i-01]
+    caption: "Identical model, settings and seed on every machine. Only the clock differs."
+  - id: seg2
+    title: "Same minute, different results"
+    task: t2i
+    protocol: iso_time
+    budget_seconds: 60             # TBC from rehearsal: 30–60 s
+    inputs: [t2i-01, t2i-02, t2i-03]
+    caption: "Each machine ran the largest model it could finish in {budget} seconds."
+  - id: seg3
+    title: "The same test in 3D"
+    task: i23d
+    protocol: iso_time
+    budget_seconds: 60
+    inputs: [i23d-01, i23d-02, i23d-03]
+    caption: "Each machine ran the largest 3D model it could finish in {budget} seconds. Error is measured against the scanned object."
+  - id: seg3q
+    title: "Can the workstation run the DGX model?"
+    task: i23d
+    protocol: iso_quality
+    budget_seconds: null
+    inputs: [i23d-01]
+    caption: "TRELLIS.2 needs 24 GB. The workstation has 16."
+  - id: seg4
+    title: "Your prompt"
+    task: t2i
+    protocol: iso_time
+    budget_seconds: 60
+    inputs: [live]
+    caption: "Each machine ran the largest model it could finish in {budget} seconds."

@@ -1,0 +1,13 @@
+{
+  "_note": "Pre-vetted prompts the operator can pick if the audience suggestion is unusable. Each has been run in rehearsal; seed 4242.",
+  "prompts": [
+    "A lighthouse on a cliff during a thunderstorm, waves crashing below",
+    "A cozy library reading nook with a cat asleep on a stack of books",
+    "A futuristic train station made of glass and wood, morning light",
+    "A bowl of ramen with a soft-boiled egg, steam rising, top-down view",
+    "A hot air balloon festival over a desert canyon at sunrise",
+    "An astronaut tending a vegetable garden inside a greenhouse on Mars",
+    "A red bicycle leaning against a blue door on a cobblestone street",
+    "A glass terrarium containing a tiny mountain landscape with a waterfall"
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "task": "t2i",
+  "protocol": "iso_time",
+  "machine": "laptop-cpu",
+  "input_id": "t2i-03",
+  "settings": {
+    "model": "sd15",
+    "width": 512,
+    "height": 512,
+    "steps": 15,
+    "guidance": 7.5,
+    "batch": 1
+  },
+  "settings_hash": "e870b5b359",
+  "files": [
+    "615dd061004f4700938c5dc747f30644-0.png"
+  ],
+  "result": {
+    "run_id": "615dd061004f4700938c5dc747f30644",
+    "machine": "laptop-cpu",
+    "task": "t2i",
+    "model": "sd15",
+    "model_repo": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+    "input_id": "t2i-03",
+    "protocol": "iso_time",
+    "status": "ok",
+    "message": "",
+    "outputs": [
+      "615dd061004f4700938c5dc747f30644-0.png"
+    ],
+    "output_times": [
+      135.867
+    ],
+    "completed": 1,
+    "requested": 1,
+    "load_seconds": 0.0,
+    "first_output_seconds": 135.867,
+    "all_outputs_seconds": 135.867,
+    "generation_seconds": null,
+    "export_seconds": null,
+    "elapsed_seconds": 135.867,
+    "peak_memory_mb": 6909.3,
+    "peak_reserved_mb": null,
+    "progress": {
+      "step": 16,
+      "steps": 15,
+      "done": 1,
+      "total": 1,
+      "stage": "denoising"
+    },
+    "settings": {
+      "width": 512,
+      "height": 512,
+      "steps": 15,
+      "guidance": 7.5,
+      "batch": 1,
+      "seed": 1003,
+      "precision": "float32",
+      "t5": "n/a",
+      "devices": 1,
+      "micro_batch": 1,
+      "offload": "none",
+      "seeding": "cpu generator, seed+i per image"
+    }
+  },
+  "score": null,
+  "runs": 1,
+  "times": [
+    135.867
+  ]
+}

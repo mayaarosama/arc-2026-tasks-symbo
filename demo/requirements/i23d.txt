@@ -1,0 +1,9 @@
+# Image-to-3D worker env (GPU machines). TRELLIS / TRELLIS.2 are NOT pip packages:
+#   git clone --recurse-submodules https://github.com/microsoft/TRELLIS.2   # DGX (+ workstation, for the OOM demo)
+#   git clone --recurse-submodules https://github.com/microsoft/TRELLIS     # workstation
+#   . ./setup.sh --new-env --basic --flash-attn --nvdiffrast --nvdiffrec --cumesh --o-voxel --flexgemm   (TRELLIS.2)
+#   . ./setup.sh --new-env --basic --xformers --flash-attn --diffoctreerast --spconv --mipgaussian --kaolin --nvdiffrast  (TRELLIS)
+# Both are Linux-only upstream; each needs its own conda env (different torch/CUDA pins).
+# Then, inside that env:  pip install -r requirements/i23d.txt  and put the repo on PYTHONPATH.
+-r worker-base.txt
+# CPU box (Stable Fast 3D): scripts/cpu/cpu_box_linux.sh setup  or  cpu_box_windows.ps1 setup

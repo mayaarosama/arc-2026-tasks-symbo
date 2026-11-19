@@ -1,0 +1,91 @@
+# Model registry — one entry per loadable model variant.
+# The conductor refers to these keys; each worker loads them through the named backend.
+# "dtype: auto" = bf16 on CUDA; on CPU, bf16 only if the worker config sets cpu_bf16: true, else fp32.
+#
+# Memory notes (bf16 weights, measured figures go in the rehearsal log, not here):
+#   SD3.5 Medium transformer ~4.9 GB, Large ~16.2 GB; T5-XXL encoder ~9.5 GB (int8 ~4.8 GB);
+#   CLIP-L + CLIP-G ~1.7 GB; VAE ~0.2 GB.
+#   => SD3.5 Medium WITH full T5 is ~16 GB of weights alone and does NOT fit a 16 GB card.
+
+models:
+  # ---------------- Task 1: text-to-image ----------------
+  sd35-large:
+    task: t2i
+    backend: diffusers_t2i
+    repo: stabilityai/stable-diffusion-3.5-large
+    label: "SD 3.5 Large · 8B"
+    t5: full            # full | int8 | none
+    dtype: auto
+  sd35-large-turbo:
+    task: t2i
+    backend: diffusers_t2i
+    repo: stabilityai/stable-diffusion-3.5-large-turbo
+    label: "SD 3.5 Large Turbo · 8B"
+    t5: full
+    dtype: auto
+  sd35-medium:
+    task: t2i
+    backend: diffusers_t2i
+    repo: stabilityai/stable-diffusion-3.5-medium
+    label: "SD 3.5 Medium · 2.5B"
+    t5: full
+    dtype: auto
+  sd35-medium-t5int8:      # workstation default: fits 16 GB with headroom
+    task: t2i
+    backend: diffusers_t2i
+    repo: stabilityai/stable-diffusion-3.5-medium
+    label: "SD 3.5 Medium · 2.5B (T5 int8)"
+    t5: int8
+    dtype: auto
+  sd35-medium-not5:        # CPU default, and the common iso-quality setting
+    task: t2i
+    backend: diffusers_t2i
+    repo: stabilityai/stable-diffusion-3.5-medium
+    label: "SD 3.5 Medium · 2.5B (no T5)"
+    t5: none
+    dtype: auto
+  sd15:                    # single-model demo: runs on CPU and on any CUDA GPU (fp16 from 4 GB)
+    task: t2i
+    backend: diffusers_t2i
+    repo: stable-diffusion-v1-5/stable-diffusion-v1-5
+    label: "SD 1.5 · 0.9B (earlier generation)"
+    dtype: auto
+
+  # ---------------- Task 2: image-to-3D ----------------
+  trellis2-4b:
+    task: i23d
+    backend: trellis2
+    repo: microsoft/TRELLIS.2-4B
+    label: "TRELLIS.2 · 4B"
+    # Pulls gated deps at load: facebook/dinov3-vitl16-pretrain-lvd1689m and briaai/RMBG-2.0 (CC BY-NC).
+  trellis-image-large:
+    task: i23d
+    backend: trellis1
+    repo: microsoft/TRELLIS-image-large
+    label: "TRELLIS v1 · 1.2B"
+  sf3d:                    # single-model demo: runs on CPU and on CUDA GPUs with >= 6 GB (OOM at load on 4 GB)
+    task: i23d
+    backend: sf3d
+    repo: stabilityai/stable-fast-3d
+    label: "Stable Fast 3D"
+
+  # ---------------- Task 3 (reserve): music ----------------
+  sa3-small-music:         # single-model demo: runs on CPU and on any CUDA GPU (no flash-attn needed)
+    task: music
+    backend: stable_audio3
+    repo: stabilityai/stable-audio-3-small-music
+    sa3_name: small-music  # name inside the stable-audio-3 library
+    label: "Stable Audio 3.0 Small · 433M"
+    dtype: auto            # fp16 on CUDA, fp32 on CPU; override to fp32 on Pascal (GTX 10xx)
+  sa3-medium:              # full matrix (demo-full.yaml): DGX + workstation only, needs flash-attn 2
+    task: music
+    backend: stable_audio3
+    repo: stabilityai/stable-audio-3-medium
+    sa3_name: medium
+    label: "Stable Audio 3.0 Medium · 1.4B"
+    dtype: auto
+  music-stub:              # what mock workers run for every music model (a seeded tone)
+    task: music
+    backend: music_stub
+    repo: "(placeholder tone, no weights)"
+    label: "Music model (stub)"

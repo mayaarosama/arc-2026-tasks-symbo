@@ -1,0 +1,121 @@
+# Conductor configuration — the single place where the run of show and the settings matrix live.
+# Every value marked TBC is a starting point that the rehearsal pass replaces.
+#
+# SINGLE-MODEL SHOW: one model per task, the same on every machine, each chosen because it runs on
+# a CPU *and* on a CUDA GPU (SF3D needs >= 6 GB VRAM; SD 1.5 and Stable Audio Small fit in 4 GB):
+#   t2i  sd15             SD 1.5               stable-diffusion-v1-5/stable-diffusion-v1-5
+#   i23d sf3d             Stable Fast 3D       stabilityai/stable-fast-3d
+#   music sa3-small-music Stable Audio 3 Small stabilityai/stable-audio-3-small-music
+# The machines differ only in how much they finish (batch, steps, tracks in the budget).
+# The larger per-machine models (SD 3.5, TRELLIS, Stable Audio Medium) are in config/demo-full.yaml.
+
+session_dir: session          # live outputs + runs.jsonl for this show
+replay_dir: replay            # rehearsal outputs used for REPLAY cells
+token_env: ARC_DEMO_TOKEN     # shared secret sent to workers (X-Demo-Token); unset = no auth
+
+# Seconds after the budget before a silent worker is treated as failed and REPLAY engages.
+timeout_grace_seconds: 15
+# A worker that cannot be polled for this long is treated as unreachable.
+unreachable_after_seconds: 6
+
+machines:
+  - id: dgx
+    label: "DGX H200"
+    hardware: "8× H200 · 141 GB each (TBC)"
+    color: "#76b900"
+    workers:
+      t2i: http://dgx.local:8101
+      i23d: http://dgx.local:8102
+      music: http://dgx.local:8103
+  - id: workstation
+    label: "Workstation"
+    hardware: "1 GPU · 16 GB VRAM"
+    color: "#4aa8ff"
+    one_task_at_a_time: true   # 16 GB: "Prepare" unloads the other task's worker first
+    workers:
+      t2i: http://workstation.local:8101
+      i23d: http://workstation.local:8102
+      music: http://workstation.local:8103
+  - id: cpu
+    label: "CPU only"
+    hardware: "No GPU · 16 GB RAM"
+    color: "#f0a640"
+    one_task_at_a_time: true
+    show_full_recording: true  # time up / stopped / down: show the full rehearsal run + its time
+    workers:
+      t2i: http://cpu.local:8101
+      i23d: http://cpu.local:8102
+      music: http://cpu.local:8103
+
+inputs:
+  t2i: data/t2i/stage_prompts.json
+  i23d: data/i23d/stage_objects.json
+  music: data/music/stage_inputs.json
+
+# ------------------------------------------------------------------------------------------
+# Settings matrix. "all" applies to every machine; a machine key overrides it.
+# mode: live | replay  (replay = always serve the rehearsal record, badged REPLAY)
+# ------------------------------------------------------------------------------------------
+settings:
+  t2i:
+    iso_quality:   # identical everywhere: same seed -> same image, only the clock differs
+      all: {model: sd15, width: 512, height: 512, steps: 25, guidance: 7.5, batch: 8}
+    iso_time:      # same model; faster machines afford more images and more steps (TBC)
+      dgx:         {model: sd15, width: 512, height: 512, steps: 50, guidance: 7.5, batch: 8}
+      workstation: {model: sd15, width: 512, height: 512, steps: 30, guidance: 7.5, batch: 4}
+      cpu:         {model: sd15, width: 512, height: 512, steps: 15, guidance: 7.5, batch: 1}
+  i23d:
+    iso_time:
+      all:         {model: sf3d, texture_size: 1024}
+      cpu:         {model: sf3d, texture_size: 512, mode: live}   # measure before assuming replay
+  music:
+    iso_time:      # throughput: complete 30 s tracks finished inside the budget
+      all:         {model: sa3-small-music, length_s: 30, steps: 8, repeat_until_budget: true}
+
+# ------------------------------------------------------------------------------------------
+# Run of show. The operator page shows these as buttons, in order.
+# ------------------------------------------------------------------------------------------
+segments:
+  - id: seg0
+    title: "Three machines, one task"
+    task: t2i
+    protocol: iso_time
+    budget_seconds: 60
+    inputs: [t2i-01]
+    warmup: true
+    caption: "Warm-up run. Same prompt, same seed, three machines."
+  - id: seg1
+    title: "The stopwatch"
+    task: t2i
+    protocol: iso_quality
+    budget_seconds: null           # no cutoff: every machine runs to completion
+    inputs: [t2i-01]
+    caption: "Identical model, settings and seed on every machine. Only the clock differs."
+  - id: seg2
+    title: "Same minute, different results"
+    task: t2i
+    protocol: iso_time
+    budget_seconds: 60             # TBC from rehearsal: 30–60 s
+    inputs: [t2i-01, t2i-02, t2i-03]
+    caption: "Same model on every machine. Each did as much as it could finish in {budget} seconds."
+  - id: seg3
+    title: "The same test in 3D"
+    task: i23d
+    protocol: iso_time
+    budget_seconds: 60
+    inputs: [i23d-01, i23d-02, i23d-03]
+    caption: "Same 3D model on every machine, {budget} seconds each. Error is measured against the scanned object."
+  - id: seg4
+    title: "Your prompt"
+    task: t2i
+    protocol: iso_time
+    budget_seconds: 60
+    inputs: [live]
+    caption: "Same model on every machine. Each did as much as it could finish in {budget} seconds."
+  - id: seg5                       # reserve: run only if the schedule allows
+    title: "Music in a minute"
+    task: music
+    protocol: iso_time
+    budget_seconds: 60
+    inputs: [mus-01, mus-02]       # mus-03 (continuation) waits for its seed clip
+    caption: "Same music model on every machine: complete 30-second tracks finished in {budget} seconds. Instrumental only."

@@ -1,0 +1,173 @@
+{
+  "_source": "PartiPrompts (google-research/parti), sampled by scripts/build_rehearsal_prompts.py, seed 2026",
+  "prompts": [
+    {
+      "id": "parti-01",
+      "seed": 5000,
+      "challenge": "Quantity",
+      "category": "Artifacts",
+      "prompt": "two baseballs next to three tennis balls"
+    },
+    {
+      "id": "parti-02",
+      "seed": 5001,
+      "challenge": "Quantity",
+      "category": "Indoor Scenes",
+      "prompt": "three violins lying on the floor"
+    },
+    {
+      "id": "parti-03",
+      "seed": 5002,
+      "challenge": "Quantity",
+      "category": "Artifacts",
+      "prompt": "two red balls on a table"
+    },
+    {
+      "id": "parti-04",
+      "seed": 5003,
+      "challenge": "Quantity",
+      "category": "Food & Beverage",
+      "prompt": "five green peppers to the right of two red onions"
+    },
+    {
+      "id": "parti-05",
+      "seed": 5004,
+      "challenge": "Writing & Symbols",
+      "category": "Food & Beverage",
+      "prompt": "Two cups of coffee, one with latte art of a heart. The other has latte art of stars."
+    },
+    {
+      "id": "parti-06",
+      "seed": 5005,
+      "challenge": "Writing & Symbols",
+      "category": "Illustrations",
+      "prompt": "The saying \"BE EXCELLENT TO EACH OTHER\" written with carved letters on driftwood."
+    },
+    {
+      "id": "parti-07",
+      "seed": 5006,
+      "challenge": "Writing & Symbols",
+      "category": "Illustrations",
+      "prompt": "the words 'KEEP OFF THE GRASS'"
+    },
+    {
+      "id": "parti-08",
+      "seed": 5007,
+      "challenge": "Writing & Symbols",
+      "category": "Outdoor Scenes",
+      "prompt": "the words 'KEEP OFF THE GRASS' on a sign next to a lawn"
+    },
+    {
+      "id": "parti-09",
+      "seed": 5008,
+      "challenge": "Fine-grained Detail",
+      "category": "Vehicles",
+      "prompt": "a pickup truck under street lights at night"
+    },
+    {
+      "id": "parti-10",
+      "seed": 5009,
+      "challenge": "Fine-grained Detail",
+      "category": "Vehicles",
+      "prompt": "a motorcycle in front of an rhinoceros"
+    },
+    {
+      "id": "parti-11",
+      "seed": 5010,
+      "challenge": "Fine-grained Detail",
+      "category": "Artifacts",
+      "prompt": "a yellow diamond-shaped sign with a puma silhouette"
+    },
+    {
+      "id": "parti-12",
+      "seed": 5011,
+      "challenge": "Fine-grained Detail",
+      "category": "Artifacts",
+      "prompt": "a large present with a red ribbon"
+    },
+    {
+      "id": "parti-13",
+      "seed": 5012,
+      "challenge": "Perspective",
+      "category": "Animals",
+      "prompt": "Zoomed out view of a giraffe and a zebra in the middle of a field covered with colorful flowers"
+    },
+    {
+      "id": "parti-14",
+      "seed": 5013,
+      "challenge": "Perspective",
+      "category": "Artifacts",
+      "prompt": "view of a clock tower from above"
+    },
+    {
+      "id": "parti-15",
+      "seed": 5014,
+      "challenge": "Perspective",
+      "category": "Vehicles",
+      "prompt": "Three-quarters front view of a red 1997 Ford F-150 coming around a curve in a mountain road and looking over a green valley on a cloudy day."
+    },
+    {
+      "id": "parti-16",
+      "seed": 5015,
+      "challenge": "Perspective",
+      "category": "Vehicles",
+      "prompt": "Three-quarters front view of a yellow 2017 Corvette coming around a curve in a mountain road and looking over a green valley on a cloudy day."
+    },
+    {
+      "id": "parti-17",
+      "seed": 5016,
+      "challenge": "Properties & Positioning",
+      "category": "Illustrations",
+      "prompt": "three small yellow boxes on a large blue box"
+    },
+    {
+      "id": "parti-18",
+      "seed": 5017,
+      "challenge": "Properties & Positioning",
+      "category": "Illustrations",
+      "prompt": "concentric squares fading from yellow on the outside to deep orange on the inside"
+    },
+    {
+      "id": "parti-19",
+      "seed": 5018,
+      "challenge": "Properties & Positioning",
+      "category": "Illustrations",
+      "prompt": "a large yellow sphere behind a small purple pyramid"
+    },
+    {
+      "id": "parti-20",
+      "seed": 5019,
+      "challenge": "Properties & Positioning",
+      "category": "Illustrations",
+      "prompt": "a stack of three red cubes with a blue sphere on the right and two green cones on the left"
+    },
+    {
+      "id": "parti-21",
+      "seed": 5020,
+      "challenge": "Complex",
+      "category": "Artifacts",
+      "prompt": "a brown trash bin with a green compost bin on its left and a blue recycling bin on its right"
+    },
+    {
+      "id": "parti-22",
+      "seed": 5021,
+      "challenge": "Complex",
+      "category": "Animals",
+      "prompt": "a white rabbit in blue jogging clothes doubled over in pain while a turtle wearing a red tank top dashes confidently through the finish line"
+    },
+    {
+      "id": "parti-23",
+      "seed": 5022,
+      "challenge": "Complex",
+      "category": "Vehicles",
+      "prompt": "a pickup truck with a horse on its left and two dogs on its right"
+    },
+    {
+      "id": "parti-24",
+      "seed": 5023,
+      "challenge": "Complex",
+      "category": "World Knowledge",
+      "prompt": "The Millennium Wheel next to the Statue of Liberty. The Sagrada Familia church is also visible."
+    }
+  ]
+}

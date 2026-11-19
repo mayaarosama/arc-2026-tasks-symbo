@@ -1,0 +1,104 @@
+/* Projector display. Dark ground, high contrast, readable from the back of the room.
+   No web fonts: the venue may have no internet. */
+:root {
+  --bg: #0b0d10;
+  --panel: #14181d;
+  --line: #262c34;
+  --ink: #f2f4f7;
+  --ink-2: #a9b1bc;
+  --ink-3: #6c7682;
+  --live: #3ddc84;
+  --replay: #ffb020;
+  --mock: #b48cff;
+  --bad: #ff5d5d;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink);
+  font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; overflow: hidden; }
+.mono { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+.view { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 2.2vh 2.2vw; gap: 1.6vh; }
+[hidden] { display: none !important; }
+
+/* ---- title view ---- */
+.title-view { justify-content: center; align-items: center; text-align: center; gap: 4vh; }
+.title-view h1 { font-size: 6vw; margin: 0; font-weight: 700; letter-spacing: -0.02em; }
+.title-view .machines { display: flex; gap: 4vw; font-size: 2.2vw; color: var(--ink-2); }
+.title-view .machines span::before { content: ""; display: inline-block; width: .7em; height: .7em;
+  border-radius: 50%; background: var(--c); margin-right: .4em; vertical-align: middle; }
+
+/* ---- round header ---- */
+.round-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 2vw; }
+.round-head .seg { font-size: 1.1vw; color: var(--ink-3); text-transform: uppercase; letter-spacing: .12em; }
+.round-head h2 { margin: .3vh 0 0; font-size: 2.6vw; font-weight: 700; }
+.round-head .task-line { margin-top: .5vh; font-size: 1.25vw; color: var(--ink); }
+.round-head .task-line b { color: var(--ink-2); font-weight: 600; }
+.round-head .input { margin-top: .8vh; font-size: 1.45vw; color: var(--ink-2); max-width: 68vw;
+  display: flex; gap: 1vw; align-items: center; }
+.round-head .input img { height: 7vh; border-radius: 6px; background: #fff1; }
+.protocol { text-align: right; }
+.protocol .chip { display: inline-block; padding: .35em .8em; border-radius: 999px; border: 2px solid var(--ink-3);
+  font-size: 1.1vw; font-weight: 700; letter-spacing: .08em; }
+.protocol .budget { font-size: 3.4vw; font-weight: 700; margin-top: .4vh; }
+.protocol .budget.over { color: var(--ink-3); }
+.protocol .budget small { font-size: .35em; font-weight: 600; color: var(--ink-3); margin-left: .3em; }
+
+/* ---- cells ---- */
+.cells { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.4vw; min-height: 0; }
+.cell { background: var(--panel); border: 1px solid var(--line); border-top: 6px solid var(--c);
+  border-radius: 10px; padding: 1.6vh 1.2vw; display: flex; flex-direction: column; gap: 1vh; min-height: 0; }
+.cell-head { display: flex; justify-content: space-between; align-items: flex-start; }
+.cell-head .name { font-size: 1.9vw; font-weight: 700; }
+.cell-head .hw { font-size: 1vw; color: var(--ink-3); margin-top: .2vh; }
+.badge { font-size: 1vw; font-weight: 800; letter-spacing: .1em; padding: .25em .6em; border-radius: 6px;
+  border: 2px solid currentColor; }
+.badge.LIVE { color: var(--live); }
+.badge.REPLAY { color: var(--replay); }
+.badge.MOCK { color: var(--mock); }
+.badge.PENDING { color: var(--ink-3); }
+.model { font-size: 1.25vw; }
+.model .settings { display: block; color: var(--ink-2); font-size: 1.05vw; margin-top: .3vh; }
+.clock { font-size: 4.6vw; font-weight: 700; line-height: 1; }
+.clock.done { color: var(--c); }
+.bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--c); transition: width .25s linear; }
+.stage-text { font-size: 1vw; color: var(--ink-3); min-height: 1.3em; }
+.outputs { flex: 1; min-height: 0; display: grid; gap: 6px; align-content: start; }
+.outputs.n1 { grid-template-columns: 1fr; }
+.outputs.n2, .outputs.n4 { grid-template-columns: 1fr 1fr; }
+.outputs.n8 { grid-template-columns: repeat(4, 1fr); }
+/* 2 rows of images: share the free height of the cell, so they never spill over the result line */
+.outputs.n4, .outputs.n8 { grid-template-rows: repeat(2, minmax(0, 1fr)); align-content: stretch; overflow: hidden; }
+.outputs.n4 img, .outputs.n8 img { width: 100%; height: 100%; aspect-ratio: auto; object-fit: contain; }
+.outputs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; display: block;
+  animation: land .35s ease-out; }
+/* one image: fit the free height of the cell instead of the width, so nothing below is pushed off */
+.outputs.n1 { display: flex; justify-content: center; }
+.outputs.n1 img { width: auto; height: 100%; max-width: 100%; object-fit: contain; }
+.outputs model-viewer { width: 100%; height: 100%; min-height: 30vh; background: #0000;
+  --poster-color: transparent; }
+@keyframes land { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+.result { font-size: 1.35vw; font-weight: 600; min-height: 1.4em; }
+.result.oom { color: var(--bad); font-size: 2vw; font-weight: 800; }
+.result.recorded { color: var(--replay); }
+.note { font-size: .95vw; color: var(--ink-3); min-height: 1.2em; }
+.score { font-size: 1.2vw; color: var(--ink-2); }
+.score b { color: var(--ink); font-size: 1.5vw; }
+
+/* ---- footer ---- */
+.foot { border-top: 1px solid var(--line); padding-top: 1.2vh; display: flex; justify-content: space-between;
+  gap: 2vw; align-items: baseline; }
+.foot .caption { font-size: 1.35vw; color: var(--ink-2); }
+.foot .headline { font-size: 1.6vw; font-weight: 700; text-align: right; white-space: nowrap; }
+
+/* ---- summary view ---- */
+.summary h2 { font-size: 2.6vw; margin: 0; }
+.summary .sub { color: var(--ink-3); font-size: 1.2vw; }
+.summary .rows { flex: 1; overflow: hidden; display: flex; flex-direction: column; gap: 1.6vh; }
+.srow .label { font-size: 1.2vw; color: var(--ink-2); margin-bottom: .4vh; }
+.sbar { display: grid; grid-template-columns: 12vw 1fr; align-items: center; gap: 1vw; height: 3.2vh; }
+.sbar .who { font-size: 1.05vw; color: var(--ink-2); text-align: right; }
+.sbar .track { position: relative; height: 100%; }
+.sbar .fill { position: absolute; left: 0; top: 15%; height: 70%; background: var(--c); border-radius: 0 4px 4px 0; }
+.sbar .val { position: absolute; top: 50%; transform: translateY(-50%); font-size: 1.05vw; white-space: nowrap; }
+.axis-note { font-size: .95vw; color: var(--ink-3); }

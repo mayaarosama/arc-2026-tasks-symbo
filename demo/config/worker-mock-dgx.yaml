@@ -1,0 +1,13 @@
+# Mock worker: simulates dgx timing on a laptop with no GPU. Used for UI and failure drills.
+machine: dgx
+results_dir: results-mock/dgx
+mock: true
+mock_speed: 0.15         # seconds-per-step multiplier relative to the workstation
+devices:
+  t2i: [mock:0, mock:1, mock:2, mock:3, mock:4, mock:5, mock:6, mock:7]
+  i23d: [mock:0]
+  music: [mock:0]
+micro_batch: 1
+preload:
+  t2i: []
+  i23d: []

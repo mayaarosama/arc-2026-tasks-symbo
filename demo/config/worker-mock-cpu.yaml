@@ -1,0 +1,14 @@
+# Mock worker: simulates cpu timing on a laptop with no GPU. Used for UI and failure drills.
+machine: cpu
+results_dir: results-mock/cpu
+mock: true
+mock_speed: 12         # seconds-per-step multiplier relative to the workstation
+devices:
+  t2i: [mock:0]
+  i23d: [mock:0]
+  music: [mock:0]
+micro_batch: 1
+exclusive_models: true
+preload:
+  t2i: []
+  i23d: []

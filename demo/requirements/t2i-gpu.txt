@@ -1,0 +1,3 @@
+# GPU machines only, on top of t2i.txt.
+-r t2i.txt
+bitsandbytes>=0.45     # int8 T5 on the 16 GB workstation

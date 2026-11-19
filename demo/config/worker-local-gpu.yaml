@@ -1,0 +1,23 @@
+# This laptop's GTX 1050 Ti (4 GB, Pascal: no bf16, so fp16) as a stand-in GPU machine.
+# SD 1.5 and Stable Audio 3 Small fit; SF3D does NOT (needs ~6 GB: out_of_memory at load, measured
+# 2026-11-18). The i23d worker stays configured so the stage shows that failure cleanly. Used to exercise the real code
+# paths before the real hardware is reachable. One worker per task, each in its own env:
+#   t2i  : python -m arcdemo.worker --config config/worker-local-gpu.yaml --task t2i   --port 9201
+#   i23d : python -m arcdemo.worker --config config/worker-local-gpu.yaml --task i23d  --port 9211  (PYTHONPATH=third_party/stable-fast-3d)
+#   music: python -m arcdemo.worker --config config/worker-local-gpu.yaml --task music --port 9221
+machine: laptop-gpu
+results_dir: results-local/gpu
+mock: false
+devices:
+  t2i: [cuda:0]
+  i23d: [cuda:0]
+  music: [cuda:0]
+exclusive_models: true   # 4 GB: one model at a time
+micro_batch: 1
+model_overrides:
+  sd15: {dtype: fp16}
+  sa3-small-music: {dtype: fp32}   # Pascal fp16 is far slower than fp32
+preload:
+  t2i: [sd15]
+  i23d: []
+  music: []

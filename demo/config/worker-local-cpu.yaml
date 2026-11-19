@@ -1,0 +1,20 @@
+# This laptop's CPU (6 cores, 16 GB RAM: the same RAM as the CPU box) as a stand-in CPU machine.
+machine: laptop-cpu
+results_dir: results-local/cpu
+mock: false
+#   3D worker (.venv-i23d, PYTHONPATH=third_party/stable-fast-3d):
+#     python -m arcdemo.worker --config config/worker-local-cpu.yaml --task i23d --port 9212
+#   music worker (music env, requirements/music.txt):
+#     python -m arcdemo.worker --config config/worker-local-cpu.yaml --task music --port 9222
+devices:
+  t2i: [cpu]
+  i23d: [cpu]
+  music: [cpu]
+cpu_threads: 6
+cpu_bf16: false
+micro_batch: 1
+exclusive_models: true
+preload:
+  t2i: [sd15]
+  i23d: [sf3d]          # 16 GB RAM: stop the t2i worker before starting this one
+  music: []

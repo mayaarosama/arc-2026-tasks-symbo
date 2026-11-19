@@ -1,0 +1,189 @@
+"""End to end: conductor + three mock worker processes. Covers the failure drill:
+a dead worker must never hang a round — the cell falls back and says why."""
+import asyncio
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import httpx
+import pytest
+import yaml
+
+from arcdemo.conductor.config import DemoConfig
+from arcdemo.conductor.core import Conductor
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+@pytest.fixture()
+def stack(tmp_path, request):
+    procs, machines = {}, []
+    speeds = getattr(request, "param", {"dgx": 0.01, "workstation": 0.02, "cpu": 0.05})
+    for mid, speed in speeds.items():
+        wcfg = yaml.safe_load((ROOT / f"config/worker-mock-{mid}.yaml").read_text())
+        wcfg.update(mock_speed=speed, results_dir=str(tmp_path / f"results-{mid}"))
+        wpath = tmp_path / f"worker-{mid}.yaml"
+        wpath.write_text(yaml.safe_dump(wcfg))
+        port = free_port()
+        procs[mid] = subprocess.Popen([sys.executable, "-m", "arcdemo.worker", "--config", str(wpath),
+                                       "--task", "t2i,i23d,music", "--host", "127.0.0.1", "--port", str(port)],
+                                      cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        url = f"http://127.0.0.1:{port}"
+        machines.append({"id": mid, "label": mid, "workers": {"t2i": url, "i23d": url, "music": url},
+                         "show_full_recording": mid == "cpu"})
+    for m in machines:                                   # wait until every worker answers
+        end = time.time() + 30
+        while True:
+            try:
+                httpx.get(m["workers"]["t2i"] + "/health", timeout=1).raise_for_status()
+                break
+            except httpx.HTTPError:
+                assert time.time() < end, f"{m['id']} worker did not start"
+                time.sleep(0.3)
+    cfg_path = tmp_path / "demo-test.yaml"
+    cfg_path.write_text(yaml.safe_dump({"extends": str(ROOT / "config/demo.yaml"), "machines": machines,
+                                        "session_dir": str(tmp_path / "session"),
+                                        "replay_dir": str(tmp_path / "replay")}))
+    yield DemoConfig(cfg_path), procs
+    for p in procs.values():
+        p.terminate()
+
+
+async def one_round(cfg: DemoConfig, segment: str, input_id: str) -> dict:
+    cond = Conductor(cfg)
+    await cond.refresh_health()
+    rnd = await cond.start_round(segment, input_id)
+    await cond.wait_round(60)
+    await cond.http.aclose()
+    return rnd
+
+
+def test_round_completes_live_on_all_machines(stack):
+    cfg, _ = stack
+    rnd = asyncio.run(one_round(cfg, "seg2", "t2i-01"))
+    cells = rnd["cells"]
+    assert {c["status"] for c in cells.values()} == {"ok"}, {m: c["note"] for m, c in cells.items()}
+    assert cells["dgx"]["completed"] == 8 and len(cells["dgx"]["outputs"]) == 8
+    assert all(Path(o["path"]).exists() for c in cells.values() for o in c["outputs"])
+    log = (Path(cfg.session_dir) / "runs.jsonl").read_text().splitlines()
+    assert len(log) == 3                                 # one measurement record per cell
+
+
+def test_dead_worker_falls_back_with_a_reason(stack):
+    cfg, procs = stack
+    procs["cpu"].terminate()
+    procs["cpu"].wait()
+    rnd = asyncio.run(one_round(cfg, "seg2", "t2i-02"))
+    cpu = rnd["cells"]["cpu"]
+    assert cpu["mode"] == "REPLAY" and cpu["status"] == "unavailable"   # no rehearsal record in tmp
+    assert "unreachable" in cpu["note"]
+    assert rnd["cells"]["dgx"]["status"] == "ok"           # the others are unaffected
+
+
+# ---------------------------------------------------------------- stop + full recordings ----
+SLOW_CPU = {"dgx": 0.01, "workstation": 0.02, "cpu": 50}     # cpu: ~28 s per image
+
+
+def save_full_recording(cfg: DemoConfig, tmp_path: Path, seconds: float = 123.4) -> None:
+    """What `rehearse.py --full` leaves behind for the CPU on seg2 / t2i-01."""
+    from PIL import Image
+    img = tmp_path / "rec-0.png"
+    Image.new("RGB", (8, 8)).save(img)
+    Conductor(cfg).replay.save("t2i", "iso_time", "cpu", "t2i-01", cfg.settings("t2i", "iso_time", "cpu"),
+                               {"status": "ok", "all_outputs_seconds": seconds, "completed": 1, "requested": 1,
+                                "output_times": [seconds]}, [img], variant="full")
+
+
+@pytest.mark.parametrize("stack", [SLOW_CPU], indirect=True)
+def test_cpu_time_up_shows_full_recording_with_its_time(stack, tmp_path):
+    cfg, _ = stack
+    save_full_recording(cfg, tmp_path)
+
+    async def go():
+        cond = Conductor(cfg)
+        await cond.refresh_health()
+        plan = cond.plan("seg2", "t2i-01")
+        rnd = await cond.start_round("seg2", "t2i-01", budget_override=1)
+        await cond.wait_round(30)
+        await cond.http.aclose()
+        return plan, rnd
+
+    plan, rnd = asyncio.run(go())
+    cpu_plan = next(m for m in plan["machines"] if m["id"] == "cpu")
+    assert cpu_plan["recording"]["seconds"] == 123.4 and cpu_plan["full_recording"]
+    cpu = rnd["cells"]["cpu"]
+    assert cpu["mode"] == "REPLAY" and cpu["status"] == "ok", cpu["note"]
+    assert cpu["recorded"]["seconds"] == 123.4 and cpu["final_seconds"] == 123.4
+    assert "Time up at 1 s" in cpu["note"]
+    assert cpu["outputs"][0]["url"].endswith("/t2i/iso_time/cpu/t2i-01/full/rec-0.png")
+    assert cpu["outputs"][0]["reveal_at"] is None                     # shown at once
+    assert rnd["cells"]["dgx"]["mode"] == "LIVE"                       # fast machines unaffected
+
+
+@pytest.mark.parametrize("stack", [SLOW_CPU], indirect=True)
+def test_stop_one_machine_and_stop_all(stack, tmp_path):
+    cfg, _ = stack
+    save_full_recording(cfg, tmp_path, seconds=200.0)
+
+    async def go():
+        cond = Conductor(cfg)
+        await cond.refresh_health()
+        rnd = await cond.start_round("seg1", "t2i-01")                 # no time limit
+        await asyncio.sleep(1.5)
+        await cond.stop_cell("workstation")                            # may already be done: no-op then
+        await cond.cancel_round()                                      # the CPU is still working
+        await cond.wait_round(10)
+        await cond.http.aclose()
+        return rnd
+
+    rnd = asyncio.run(go())
+    assert rnd["done"]
+    cpu = rnd["cells"]["cpu"]
+    # seg1 is iso_quality and has no recording -> the CPU shows "stopped" with the live time
+    assert cpu["status"] == "cancelled" and cpu["recorded"] is None
+    assert cpu["note"].startswith("Still running when stopped")
+
+
+@pytest.mark.parametrize("stack", [SLOW_CPU], indirect=True)
+def test_stop_cpu_with_recording_switches_to_it(stack, tmp_path):
+    cfg, _ = stack
+    save_full_recording(cfg, tmp_path, seconds=200.0)
+
+    async def go():
+        cond = Conductor(cfg)
+        await cond.refresh_health()
+        rnd = await cond.start_round("seg2", "t2i-01")                 # 60 s limit, CPU needs ~28 s+
+        await asyncio.sleep(1.0)
+        await cond.stop_cell("cpu")
+        await cond.wait_round(30)
+        await cond.http.aclose()
+        return rnd
+
+    rnd = asyncio.run(go())
+    cpu = rnd["cells"]["cpu"]
+    assert cpu["recorded"]["seconds"] == 200.0 and cpu["recorded"]["why"].startswith("Stopped at")
+    assert rnd["cells"]["dgx"]["status"] == "ok"
+
+
+def test_full_rehearsal_runs_only_flagged_machines_without_limit(stack):
+    cfg, _ = stack
+
+    async def go():
+        cond = Conductor(cfg, allow_replay=False)
+        await cond.refresh_health()
+        rnd = await cond.start_round("seg2", "t2i-01", run_to_completion=True, machines=["cpu"])
+        await cond.wait_round(30)
+        await cond.http.aclose()
+        return rnd
+
+    rnd = asyncio.run(go())
+    assert rnd["order"] == ["cpu"] and rnd["budget_seconds"] is None
+    assert rnd["cells"]["cpu"]["status"] == "ok"

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ARC · Stage</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/static/stage.css">
+<script type="module" src="/static/vendor/model-viewer.min.js"></script>
+<script src="/static/common.js"></script>
+</head>
+<body>
+  <section id="v-title" class="view title-view">
+    <h1>Same task. Same minute.<br>Three machines.</h1>
+    <div class="machines" id="title-machines"></div>
+  </section>
+
+  <section id="v-round" class="view" hidden>
+    <header class="round-head">
+      <div>
+        <div class="seg" id="r-seg"></div>
+        <h2 id="r-title"></h2>
+        <div class="task-line" id="r-task"></div>
+        <div class="input" id="r-input"></div>
+      </div>
+      <div class="protocol">
+        <span class="chip" id="r-protocol"></span>
+        <div class="budget mono" id="r-budget"></div>
+      </div>
+    </header>
+    <main class="cells" id="r-cells"></main>
+    <footer class="foot">
+      <div class="caption" id="r-caption"></div>
+      <div class="headline" id="r-headline"></div>
+    </footer>
+  </section>
+
+  <section id="v-summary" class="view summary" hidden>
+    <h2>Everything we just ran</h2>
+    <div class="sub">Time to finish, log scale. Labels show outputs completed and measured time.</div>
+    <div class="rows" id="s-rows"></div>
+    <div class="axis-note">LIVE and REPLAY results are marked per bar. Timings are measured on each machine; model load time is excluded.</div>
+  </section>
+
+  <section id="v-blank" class="view" hidden></section>
+
+<script src="/static/stage.js"></script>
+</body>
+</html>

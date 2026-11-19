@@ -1,0 +1,2 @@
+# Extra blocked terms for the live audience prompt, one per line (prefix match on word start).
+# Add names of people present at the event, competitor brands, anything local and sensitive.

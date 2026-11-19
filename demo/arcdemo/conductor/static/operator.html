@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ARC · Operator</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="/static/common.js"></script>
+<style>
+  :root { --bg:#101317; --panel:#181c22; --line:#2a3039; --ink:#eef1f5; --ink-2:#a3acb8; --ok:#3ddc84; --warn:#ffb020; --bad:#ff5d5d; --accent:#4aa8ff; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px "Segoe UI", system-ui, sans-serif; }
+  .wrap { display:grid; grid-template-columns: 460px 1fr; gap:14px; padding:14px; min-height:100vh; }
+  @media (max-width: 980px) { .wrap { grid-template-columns: 1fr; } }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px; margin-bottom:12px; }
+  h3 { margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-2); }
+  h3 .step { display:inline-block; min-width:20px; height:20px; line-height:20px; text-align:center; border-radius:50%; background:#2b3440; color:var(--ink); margin-right:6px; font-size:12px; letter-spacing:0; }
+  button { background:#232a33; color:var(--ink); border:1px solid #3a4350; border-radius:6px; padding:7px 11px; cursor:pointer; font:inherit; }
+  button:hover:not(:disabled) { border-color:#6b7787; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.primary { background:#1f5d3a; border-color:#2f8a56; }
+  button.danger { background:#7a1f1f; border-color:#b03a3a; }
+  button.big { font-size:16px; font-weight:600; padding:11px 16px; width:100%; }
+  button.sel { outline:2px solid var(--ok); }
+  .row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:8px; }
+  .col { display:flex; flex-direction:column; gap:6px; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  td, th { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .up { color:var(--ok); } .down { color:var(--bad); } .warn { color:var(--warn); }
+  textarea, input[type=number], select { width:100%; background:#0d1014; color:var(--ink); border:1px solid #3a4350; border-radius:6px; padding:8px; font:inherit; }
+  select { cursor:pointer; }
+  label.field { display:block; color:var(--ink-2); font-size:12.5px; margin:6px 0 4px; }
+  .muted { color:var(--ink-2); font-size:12.5px; }
+  .preview { width:100%; aspect-ratio:16/9; border:1px solid var(--line); border-radius:8px; background:#000; }
+  .msg { min-height:1.4em; font-size:13px; }
+  #segments button { text-align:left; }
+  /* "What will run" card */
+  .plan dl { display:grid; grid-template-columns: 118px 1fr; gap:6px 10px; margin:0; }
+  .plan dt { color:var(--ink-2); font-size:12.5px; }
+  .plan dd { margin:0; }
+  .plan .task { font-size:17px; font-weight:600; }
+  .plan .input-img { max-width:120px; max-height:90px; border-radius:6px; border:1px solid var(--line); display:block; margin-top:4px; background:#fff; }
+  .plan ul { margin:0; padding-left:0; list-style:none; }
+  .plan li { margin:0 0 6px; padding-left:10px; border-left:3px solid var(--c, #555); }
+  .plan li .rec { font-size:12px; }
+  /* running now */
+  .cell { display:grid; grid-template-columns: 1fr auto auto; gap:6px; align-items:center; padding:6px 0; border-top:1px solid var(--line); }
+  .cell .who { font-weight:600; }
+  .cell .what { font-size:12.5px; color:var(--ink-2); }
+  details summary { cursor:pointer; color:var(--ink-2); font-size:12.5px; margin-top:6px; }
+  details[open] summary { margin-bottom:6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <section>
+      <h3>Part of the show</h3>
+      <div class="col" id="segments"></div>
+    </section>
+
+    <section class="plan">
+      <h3>What will run</h3>
+      <dl>
+        <dt>Task</dt><dd class="task" id="p-task">—</dd>
+        <dt>AI model</dt><dd id="p-model">—</dd>
+        <dt>Input</dt><dd id="p-input">—</dd>
+        <dt>Comparison</dt><dd id="p-protocol">—</dd>
+        <dt>Expected output</dt><dd><ul id="p-expected"></ul></dd>
+      </dl>
+    </section>
+
+    <section>
+      <h3><span class="step">1</span>Load the model</h3>
+      <button id="prepare">Load the AI model on all machines</button>
+      <div class="muted" style="margin-top:6px">Do this once per part, before starting. Loading time is not counted.</div>
+      <div class="muted" id="prepare-state" style="margin-top:6px"></div>
+    </section>
+
+    <section>
+      <h3><span class="step">2</span>Choose the input and start</h3>
+      <label class="field" for="example">Example prompt</label>
+      <select id="example"></select>
+      <div id="live-box" hidden>
+        <label class="field" for="prompt">Prompt to run (typed by the operator, never by the audience)</label>
+        <textarea id="prompt" rows="3" placeholder="Type the audience's idea here"></textarea>
+        <div class="row" style="margin-top:6px">
+          <button id="check">Check the prompt is safe</button>
+          <label class="muted"><input type="checkbox" id="override"> Run anyway (I have read it)</label>
+        </div>
+        <div class="msg" id="mod-msg"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="primary big" id="start">▶ Start on all machines</button>
+      </div>
+      <details>
+        <summary>More options</summary>
+        <div class="muted">Show the recording instead of running live on:</div>
+        <div class="row" id="force"></div>
+        <label class="field" for="budget">Time limit in seconds (leave empty to use the planned limit)</label>
+        <input type="number" id="budget" min="1" style="width:140px" placeholder="planned">
+      </details>
+      <div class="msg" id="run-msg"></div>
+    </section>
+
+    <section>
+      <h3><span class="step">3</span>Running now</h3>
+      <button class="danger big" id="cancel" disabled>■ Stop all machines</button>
+      <div class="muted" id="round-info" style="margin:8px 0 2px"></div>
+      <div id="cellctl"></div>
+    </section>
+
+    <section>
+      <h3>Projector screen</h3>
+      <div class="row" id="views"></div>
+    </section>
+  </div>
+
+  <div>
+    <section>
+      <h3>Projector preview</h3>
+      <iframe class="preview" src="/stage" title="projector preview"></iframe>
+    </section>
+    <section>
+      <h3>Machines</h3>
+      <div id="warnings" class="warn"></div>
+      <table><thead><tr><th>Machine · task</th><th>Status</th><th>Model in memory</th><th>Software version</th><th>Response time</th></tr></thead>
+        <tbody id="health"></tbody></table>
+    </section>
+  </div>
+</div>
+<script src="/static/operator.js"></script>
+</body>
+</html>

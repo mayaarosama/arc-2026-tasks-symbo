@@ -1,0 +1,16 @@
+# Worker config for the CPU-only box (16 GB RAM).
+machine: cpu
+results_dir: results
+mock: false
+devices:
+  t2i: [cpu]
+  i23d: [cpu]
+  music: [cpu]
+cpu_threads: null       # null = physical core count
+cpu_bf16: false         # set true only if the CPU has AMX / AVX512-BF16 (check: lscpu | grep -i bf16)
+micro_batch: 1
+exclusive_models: true   # loading a model first unloads any other in this worker
+preload:               # single-model show (demo.yaml). Full matrix (demo-full.yaml): t2i [sd35-medium-not5]
+  t2i: [sd15]
+  i23d: []              # SF3D loaded on "Prepare segment 3"; RAM cannot hold both comfortably
+  music: []             # Stable Audio 3 Small loaded on "Prepare" of the music segment
