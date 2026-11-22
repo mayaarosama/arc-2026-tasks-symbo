@@ -81,27 +81,34 @@ def main() -> None:
               "(only " + ", ".join(allow[r]) + ")" if r in allow else "")
     if a.dry_run:
         return
+    failed = []
+    for r in repos:
+        status, detail = fetch(r, IGNORE.get(r), allow.get(r))
+        print(status if status != "failed" else "FAILED", r, "->" if status != "failed" else "-", detail)
+        if status == "failed":
+            failed.append(r)
+    if failed:
+        sys.exit(f"{len(failed)} repo(s) not downloaded: {', '.join(failed)}")
+
+
+def fetch(repo: str, ignore=None, allow=None) -> tuple[str, str]:
+    """Download one repo into the cache: ("ok", path) | ("cached", path + why) | ("failed", error).
+
+    Safe to re-run: files already in the cache are skipped and partial ones resume. If the Hub
+    cannot be reached (no network, gated licence revoked) a repo already on disk is kept as is."""
     from huggingface_hub import snapshot_download
     # Windows without symlink rights: huggingface_hub marks a new repo folder "symlinks OK" before
     # testing it, so parallel workers race the test and fail with WinError 1314. One worker avoids it.
     workers = 1 if sys.platform == "win32" else 8
-    # Safe to re-run: files already in the cache are skipped and partial ones resume. If the Hub
-    # cannot be reached (no network, gated licence revoked) a repo already on disk is kept as is.
-    failed = []
-    for r in repos:
-        kw = dict(ignore_patterns=IGNORE.get(r), allow_patterns=allow.get(r))
+    kw = dict(ignore_patterns=ignore, allow_patterns=allow)
+    try:
+        return "ok", snapshot_download(repo, max_workers=workers, **kw)
+    except Exception as e:   # noqa: BLE001 - any Hub error: try the local cache before giving up
         try:
-            path = snapshot_download(r, max_workers=workers, **kw)
-            print("ok", r, "->", path)
-        except Exception as e:   # noqa: BLE001 - any Hub error: try the local cache before giving up
-            try:
-                path = snapshot_download(r, local_files_only=True, **kw)
-                print("cached", r, "->", path, f"(Hub check failed: {type(e).__name__})")
-            except Exception:    # noqa: BLE001
-                print("FAILED", r, "-", type(e).__name__, str(e).splitlines()[0] if str(e) else "")
-                failed.append(r)
-    if failed:
-        sys.exit(f"{len(failed)} repo(s) not downloaded: {', '.join(failed)}")
+            path = snapshot_download(repo, local_files_only=True, **kw)
+            return "cached", f"{path} (Hub check failed: {type(e).__name__})"
+        except Exception:    # noqa: BLE001
+            return "failed", f"{type(e).__name__}: {str(e).splitlines()[0] if str(e) else ''}"
 
 
 if __name__ == "__main__":

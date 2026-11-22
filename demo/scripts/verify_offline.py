@@ -36,6 +36,7 @@ def main() -> int:
     ap.add_argument("--config", required=True, help="worker config, e.g. config/worker-dgx.yaml")
     ap.add_argument("--task", required=True)
     ap.add_argument("--demo", default="config/demo.yaml")
+    ap.add_argument("--model", action="append", help="check only these models.yaml keys (repeatable)")
     a = ap.parse_args()
     cfg = load_worker_config(str(Path(a.config).resolve()), [a.task])
     os.chdir(ROOT)
@@ -44,6 +45,8 @@ def main() -> int:
     keys = sorted({demo.settings(a.task, p, cfg["machine"])["model"]
                    for p in demo.raw["settings"][a.task]
                    if demo.settings(a.task, p, cfg["machine"]).get("mode") != "replay"})
+    if a.model:
+        keys = sorted(set(a.model))
     failures = 0
     token = os.environ.get("ARC_DEMO_TOKEN")
     headers = {"X-Demo-Token": token} if token else {}
