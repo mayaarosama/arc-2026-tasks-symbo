@@ -13,7 +13,7 @@ CONFIG = Path(__file__).resolve().parents[1] / "config"
 
 
 def client(machine: str, speed: float, tmp_path: Path) -> TestClient:
-    cfg = load_worker_config(str(CONFIG / f"worker-mock-{machine}.yaml"), ["t2i", "i23d", "music"])
+    cfg = load_worker_config(str(CONFIG / f"worker-mock-{machine}.yaml"), ["t2i", "i23d", "music", "llm", "layout"])
     cfg["mock_speed"] = speed
     cfg["results_dir"] = str(tmp_path)
     return TestClient(create_app(cfg))
@@ -86,3 +86,56 @@ def test_second_job_while_busy_is_rejected(tmp_path):
         first = c.post("/jobs", json={**T2I, "steps": 50}).json()
         assert c.post("/jobs", json=T2I).status_code == 409
         c.post(f"/jobs/{first['run_id']}/cancel")
+
+
+LLM = {"task": "llm", "model": "qwen35-4b", "input_id": "llm-01", "prompt": "a test", "seed": 3}
+
+
+def test_llm_single_reply_counts_tokens(tmp_path):
+    with client("dgx", 0.02, tmp_path) as c:
+        res = run(c, {**LLM, "max_tokens": 20})
+    assert res["status"] == "ok" and res["completed"] == 1 == res["requested"]
+    assert res["tokens"] == 20 and res["tokens_per_second"] > 0
+    assert res["first_token_seconds"] <= res["all_outputs_seconds"]
+    assert res["text"].startswith("[MOCK]") and (tmp_path / res["outputs"][0]).exists()
+
+
+def test_llm_throughput_stops_at_the_bell(tmp_path):
+    with client("workstation", 0.5, tmp_path) as c:      # ~0.013 s/token per stream
+        res = run(c, {**LLM, "streams": 4, "max_tokens": 30, "repeat_until_budget": True, "budget_seconds": 1.5})
+    assert res["status"] == "ok" and res["requested"] == 0
+    assert res["completed"] >= 4                          # whole replies finished before the bell
+    assert res["tokens"] > 30 * res["completed"] - 1      # plus the partial replies cut at the bell
+    assert res["all_outputs_seconds"] <= 1.5
+
+
+ROOM = {"task": "layout", "model": "qwen35-4b-layout", "input_id": "lay-01", "seed": 8, "room_type": "bedroom",
+        "floor_plan": [[0, 0], [3.8, 0], [3.8, 3.4], [0, 3.4]], "door": [0.6, 0], "max_objects": 5,
+        "max_tokens": 400}
+
+
+def test_layout_places_objects_one_at_a_time(tmp_path):
+    import json
+    with client("dgx", 0.02, tmp_path) as c:
+        res = run(c, ROOM)
+    assert res["status"] == "ok" and res["completed"] == 1 == res["requested"]
+    objs = res["objects"]
+    assert 1 <= len(objs) <= 5 and [o["i"] for o in objs] == list(range(len(objs)))
+    assert all(not o["issues"] for o in objs)                 # the mock packer never breaks a rule
+    assert [o["t"] for o in objs] == sorted(o["t"] for o in objs)
+    saved = json.loads((tmp_path / res["outputs"][0]).read_text())
+    assert saved["summary"]["objects"] == len(objs) and res["tokens"] > 0
+
+
+def test_layout_throughput_counts_rooms_at_the_bell(tmp_path):
+    with client("workstation", 0.1, tmp_path) as c:
+        res = run(c, {**ROOM, "streams": 4, "temperature": 0.7, "repeat_until_budget": True, "budget_seconds": 1.5})
+    assert res["status"] == "ok" and res["requested"] == 0
+    assert res["completed"] >= 4 and res["all_outputs_seconds"] <= 1.5
+    assert max(o["room"] for o in res["objects"]) >= 1      # stream 0 moved on to its next room
+
+
+def test_layout_without_floor_plan_is_an_error(tmp_path):
+    with client("cpu", 0.02, tmp_path) as c:
+        res = run(c, {**ROOM, "floor_plan": None})
+    assert res["status"] == "error" and "floor_plan" in res["message"]

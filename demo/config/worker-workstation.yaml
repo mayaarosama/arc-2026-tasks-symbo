@@ -7,9 +7,15 @@ devices:
   t2i: [cuda:0]
   i23d: [cuda:0]
   music: [cuda:0]
+  llm: [cuda:0]
+  layout: [cuda:0]    # the same llama-server path as llm
 micro_batch: 1
 exclusive_models: true   # loading a model first unloads any other in this worker
 preload:               # single-model show (demo.yaml). Full matrix (demo-full.yaml): t2i [sd35-medium-t5int8]
   t2i: [sd15]
   i23d: []              # loaded on "Prepare segment 3", after t2i is unloaded
   music: []
+  llm: []               # loaded on "Prepare" of the llm segments
+  layout: []
+llama_server: third_party/llama.cpp/bin/llama-server   # the same llama.cpp release on every machine
+llm_slots: 8

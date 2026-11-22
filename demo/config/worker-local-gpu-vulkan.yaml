@@ -1,0 +1,28 @@
+# This laptop's GTX 1050 Ti (4 GB) running the language-model tasks (llm, layout) through llama.cpp's
+# VULKAN build. Why: the installed NVIDIA driver (512.72) supports CUDA only up to 11.6, and the
+# llama.cpp CUDA builds need 12.4+. Vulkan works with this driver. It is a stand-in for testing the
+# GPU path on this laptop, NOT the stack the show machines run (CUDA build): do not compare its
+# timings with theirs. Same release (b12608), unpacked to third_party/llama.cpp-vulkan/bin.
+#   layout: python -m arcdemo.worker --config config/worker-local-gpu-vulkan.yaml --task layout --port 9241
+#   review: python scripts/sample_layout.py --config config/worker-local-gpu-vulkan.yaml
+machine: laptop-gpu
+results_dir: results-local/gpu
+mock: false
+devices:
+  llm: [cuda:0]          # any GPU device here makes the worker offload every layer (--n-gpu-layers 999)
+  layout: [cuda:0]
+exclusive_models: true
+llama_server: third_party/llama.cpp-vulkan/bin/llama-server
+# Vulkan0 is the Intel iGPU (check: llama-server --list-devices).
+# Driver workaround (measured 2026-11-21, driver 512.72): with default allocations, putting more than
+# ~16 of the model's layers on the 1050 Ti ends in "ggml_vulkan: device lost" while the weights upload
+# -- not memory (24 layers is ~2 GB of 3.6 GB free). Capping each Vulkan allocation at 128 MB fixes
+# it (256 MB still fails): every layer then loads and generation runs at ~21 tok/s (CPU: ~5).
+llama_args: ["--device", "Vulkan1"]
+llama_env:
+  GGML_VK_FORCE_MAX_ALLOCATION_SIZE: 134217728
+llm_slots: 1             # 4 GB: the 3.0 GB model plus one slot's context
+layout_ctx: 4096
+preload:
+  llm: []
+  layout: []

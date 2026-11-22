@@ -25,7 +25,10 @@ from arcdemo.worker.app import ROOT, create_app, load_worker_config  # noqa: E40
 
 TINY = {"t2i": {"prompt": "a red cube on a table", "width": 512, "height": 512, "steps": 2, "batch": 1},
         "i23d": {"image_path": "data/i23d/inputs/i23d-01.png"},
-        "music": {"prompt": "test", "length_s": 5}}
+        "music": {"prompt": "test", "length_s": 5},
+        "llm": {"prompt": "Say hello in five words.", "max_tokens": 16},
+        "layout": {"room_type": "bedroom", "floor_plan": [[0, 0], [3.8, 0], [3.8, 3.4], [0, 3.4]],
+                   "door": [0.6, 0], "max_objects": 3, "max_tokens": 120}}
 
 
 def main() -> int:
@@ -42,7 +45,9 @@ def main() -> int:
                    for p in demo.raw["settings"][a.task]
                    if demo.settings(a.task, p, cfg["machine"]).get("mode") != "replay"})
     failures = 0
-    with TestClient(create_app(cfg)) as c:
+    token = os.environ.get("ARC_DEMO_TOKEN")
+    headers = {"X-Demo-Token": token} if token else {}
+    with TestClient(create_app(cfg), headers=headers) as c:
         for key in keys:
             job = {"task": a.task, "model": key, "input_id": "verify", "seed": 1, **TINY[a.task]}
             rid = c.post("/jobs", json=job).json()["run_id"]

@@ -7,6 +7,8 @@ devices:
   t2i: [mock:0, mock:1, mock:2, mock:3, mock:4, mock:5, mock:6, mock:7]
   i23d: [mock:0]
   music: [mock:0]
+  llm: [mock:0]
+  layout: [mock:0]
 micro_batch: 1
 preload:
   t2i: []

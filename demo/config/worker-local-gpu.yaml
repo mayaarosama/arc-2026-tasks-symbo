@@ -5,6 +5,8 @@
 #   t2i  : python -m arcdemo.worker --config config/worker-local-gpu.yaml --task t2i   --port 9201
 #   i23d : python -m arcdemo.worker --config config/worker-local-gpu.yaml --task i23d  --port 9211  (PYTHONPATH=third_party/stable-fast-3d)
 #   music: python -m arcdemo.worker --config config/worker-local-gpu.yaml --task music --port 9221
+#   llm  : python -m arcdemo.worker --config config/worker-local-gpu.yaml --task llm   --port 9231  (llm env)
+#   layout: python -m arcdemo.worker --config config/worker-local-gpu.yaml --task layout --port 9241  (llm env)
 machine: laptop-gpu
 results_dir: results-local/gpu
 mock: false
@@ -12,6 +14,8 @@ devices:
   t2i: [cuda:0]
   i23d: [cuda:0]
   music: [cuda:0]
+  llm: [cuda:0]
+  layout: [cuda:0]    # the same llama-server path as llm
 exclusive_models: true   # 4 GB: one model at a time
 micro_batch: 1
 model_overrides:
@@ -21,3 +25,7 @@ preload:
   t2i: [sd15]
   i23d: []
   music: []
+  llm: []
+  layout: []
+llama_server: third_party/llama.cpp/bin/llama-server   # the same llama.cpp release on every machine
+llm_slots: 4           # 4 GB: 4B Q4_K_M (~2.7 GB) + 4 x 2048-token KV

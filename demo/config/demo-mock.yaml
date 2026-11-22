@@ -8,15 +8,15 @@ machines:
     label: "DGX H200"
     hardware: "8× H200 · 141 GB each (TBC)"
     color: "#76b900"
-    workers: {t2i: http://127.0.0.1:9101, i23d: http://127.0.0.1:9101, music: http://127.0.0.1:9101}
+    workers: {t2i: http://127.0.0.1:9101, i23d: http://127.0.0.1:9101, music: http://127.0.0.1:9101, llm: http://127.0.0.1:9101, layout: http://127.0.0.1:9101}
   - id: workstation
     label: "Workstation"
     hardware: "1 GPU · 16 GB VRAM"
     color: "#4aa8ff"
-    workers: {t2i: http://127.0.0.1:9102, i23d: http://127.0.0.1:9102, music: http://127.0.0.1:9102}
+    workers: {t2i: http://127.0.0.1:9102, i23d: http://127.0.0.1:9102, music: http://127.0.0.1:9102, llm: http://127.0.0.1:9102, layout: http://127.0.0.1:9102}
   - id: cpu
     label: "CPU only"
     hardware: "No GPU · 16 GB RAM"
     color: "#f0a640"
     show_full_recording: true
-    workers: {t2i: http://127.0.0.1:9103, i23d: http://127.0.0.1:9103, music: http://127.0.0.1:9103}
+    workers: {t2i: http://127.0.0.1:9103, i23d: http://127.0.0.1:9103, music: http://127.0.0.1:9103, llm: http://127.0.0.1:9103, layout: http://127.0.0.1:9103}

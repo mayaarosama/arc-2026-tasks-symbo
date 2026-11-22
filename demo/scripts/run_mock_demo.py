@@ -20,7 +20,7 @@ def start_workers() -> list[subprocess.Popen]:
     procs = []
     for machine, port in WORKERS:
         p = subprocess.Popen([sys.executable, "-m", "arcdemo.worker", "--config", f"config/worker-mock-{machine}.yaml",
-                              "--task", "t2i,i23d,music", "--host", "127.0.0.1", "--port", str(port)], cwd=ROOT)
+                              "--task", "t2i,i23d,music,llm,layout", "--host", "127.0.0.1", "--port", str(port)], cwd=ROOT)
         print(f"mock worker {machine:12s} pid {p.pid}  http://127.0.0.1:{port}/health")
         procs.append(p)
     return procs

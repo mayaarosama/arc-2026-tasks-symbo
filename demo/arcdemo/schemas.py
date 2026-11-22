@@ -16,7 +16,7 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-Task = Literal["t2i", "i23d", "music"]
+Task = Literal["t2i", "i23d", "music", "llm", "layout"]
 Status = Literal["queued", "loading", "running", "ok", "budget_exceeded",
                  "out_of_memory", "error", "cancelled"]
 TERMINAL: set[str] = {"ok", "budget_exceeded", "out_of_memory", "error", "cancelled"}
@@ -50,7 +50,16 @@ class JobRequest(BaseModel):
     mode: Optional[str] = None
     audio_path: Optional[str] = None
     length_s: Optional[float] = None
-    repeat_until_budget: bool = False
+    repeat_until_budget: bool = False           # music, llm: keep producing until the budget
+    # llm (prompt and seed shared with t2i)
+    streams: int = 1                            # concurrent replies (continuous batching on the server)
+    max_tokens: int = 256                       # per reply
+    temperature: float = 0.0                    # 0 = greedy: the same answer on every machine
+    # layout (streams, max_tokens, temperature, repeat_until_budget shared with llm)
+    room_type: Optional[str] = None             # bedroom | living_room | library
+    floor_plan: Optional[list[list[float]]] = None   # outline, metres, [[x, y], ...]
+    door: Optional[list[float]] = None          # [x, y] on the outline
+    max_objects: Optional[int] = None
 
 
 class Progress(BaseModel):
@@ -83,6 +92,11 @@ class JobResult(BaseModel):
     elapsed_seconds: float = 0.0                       # clock so far (live while running)
     peak_memory_mb: Optional[float] = None             # torch max_memory_allocated (GPU) / peak RSS (CPU)
     peak_reserved_mb: Optional[float] = None           # GPU only: allocator reserved, closer to nvidia-smi
+    tokens: int = 0                                    # llm: tokens generated inside the budget, all streams
+    tokens_per_second: Optional[float] = None          # llm: tokens / time of the last counted token
+    first_token_seconds: Optional[float] = None        # llm: time to first token
+    text: str = ""                                     # llm: stream 0's current reply (what the stage shows)
+    objects: list[dict[str, Any]] = Field(default_factory=list)  # layout: stream 0's placed objects, with times
     progress: Progress = Field(default_factory=Progress)
     settings: dict[str, Any] = Field(default_factory=dict)  # echo of what actually ran, incl. precision/offload
 

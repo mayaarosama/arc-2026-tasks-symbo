@@ -36,7 +36,10 @@ def cuda_sync(devices: list[str]) -> None:
     idx = _cuda_devices(devices)
     if not idx:
         return
-    import torch
+    try:
+        import torch
+    except ImportError:      # the llm env has no torch: its GPU work runs inside llama-server
+        return
     for i in idx:
         torch.cuda.synchronize(i)
 

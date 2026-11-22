@@ -34,10 +34,10 @@ def stack(tmp_path, request):
         wpath.write_text(yaml.safe_dump(wcfg))
         port = free_port()
         procs[mid] = subprocess.Popen([sys.executable, "-m", "arcdemo.worker", "--config", str(wpath),
-                                       "--task", "t2i,i23d,music", "--host", "127.0.0.1", "--port", str(port)],
+                                       "--task", "t2i,i23d,music,llm,layout", "--host", "127.0.0.1", "--port", str(port)],
                                       cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         url = f"http://127.0.0.1:{port}"
-        machines.append({"id": mid, "label": mid, "workers": {"t2i": url, "i23d": url, "music": url},
+        machines.append({"id": mid, "label": mid, "workers": {"t2i": url, "i23d": url, "music": url, "llm": url, "layout": url},
                          "show_full_recording": mid == "cpu"})
     for m in machines:                                   # wait until every worker answers
         end = time.time() + 30
@@ -187,3 +187,67 @@ def test_full_rehearsal_runs_only_flagged_machines_without_limit(stack):
     rnd = asyncio.run(go())
     assert rnd["order"] == ["cpu"] and rnd["budget_seconds"] is None
     assert rnd["cells"]["cpu"]["status"] == "ok"
+
+
+def test_llm_round_streams_tokens_on_every_machine(stack):
+    cfg, _ = stack
+
+    async def go():
+        cond = Conductor(cfg)
+        await cond.refresh_health()
+        rnd = await cond.start_round("seg7", "llm-02", budget_override=2)
+        await cond.wait_round(30)
+        await cond.http.aclose()
+        return rnd
+
+    cells = asyncio.run(go())["cells"]
+    assert {c["status"] for c in cells.values()} == {"ok"}, {m: c["note"] for m, c in cells.items()}
+    assert all(c["tokens"] > 0 and c["text"].startswith("[MOCK]") for c in cells.values())
+    assert cells["dgx"]["tokens"] > cells["cpu"]["tokens"]          # 64 streams vs 1
+
+
+def test_layout_round_builds_the_same_room_everywhere(stack):
+    cfg, _ = stack
+
+    async def go():
+        cond = Conductor(cfg)
+        await cond.refresh_health()
+        rnd = await cond.start_round("seg8", "lay-01")
+        await cond.wait_round(60)
+        await cond.http.aclose()
+        return cond, rnd
+
+    cond, rnd = asyncio.run(go())
+    cells = rnd["cells"]
+    assert {c["status"] for c in cells.values()} == {"ok"}, {m: c["note"] for m, c in cells.items()}
+    rooms = {m: [(o["cls"], o["x"], o["y"], o["rot"]) for o in c["objects"]] for m, c in cells.items()}
+    assert len(rooms["dgx"]) >= 3 and rooms["dgx"] == rooms["workstation"] == rooms["cpu"]   # greedy
+    times = [o["t"] for o in cells["cpu"]["objects"]]
+    assert times == sorted(times) and times[0] < times[-1]          # arrived one at a time
+    assert all(c["outputs"][0]["url"].endswith(".json") for c in cells.values())
+    assert cond.history[-1]["cells"]["dgx"]["layout"]["objects"] == len(rooms["dgx"])
+
+
+def test_layout_replay_keeps_object_times(stack, tmp_path):
+    cfg, procs = stack
+    rec_file = tmp_path / "room-0-0.json"
+    rec_file.write_text("{}")
+    objs = [{"cls": "double_bed", "x": 2, "y": 2.4, "w": 1.6, "d": 2, "h": 0.5, "rot": 180, "i": 0, "room": 0,
+             "t": 4.0, "issues": []}]
+    Conductor(cfg).replay.save("layout", "iso_quality", "workstation", "lay-01",
+                               cfg.settings("layout", "iso_quality", "workstation"),
+                               {"status": "ok", "all_outputs_seconds": 9.0, "completed": 1, "requested": 1,
+                                "output_times": [9.0], "objects": objs, "tokens": 40}, [rec_file])
+    procs["workstation"].terminate()
+    procs["workstation"].wait()
+
+    async def go():
+        cond = Conductor(cfg)
+        await cond.refresh_health()
+        rnd = await cond.start_round("seg8", "lay-01")
+        await cond.wait_round(60)
+        await cond.http.aclose()
+        return rnd
+
+    ws = asyncio.run(go())["cells"]["workstation"]
+    assert ws["mode"] == "REPLAY" and ws["objects"] == objs and ws["final_seconds"] == 9.0

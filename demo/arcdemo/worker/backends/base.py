@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from ...schemas import JobRequest, JobResult
-from ..metrics import Clock, cuda_sync
+from ..metrics import Clock, MemoryMeter, cuda_sync
 
 log = logging.getLogger("arcdemo.worker")
 
@@ -99,6 +99,10 @@ class Backend:
     def generate(self, req: JobRequest, ctx: JobContext) -> None:
         raise NotImplementedError
 
+    def memory_meter(self):
+        """Context manager reporting peak_allocated_mb / peak_reserved_mb for one job."""
+        return MemoryMeter(self.devices)
+
     def describe(self, req: JobRequest) -> dict:
         """Settings echo for the run log: what actually ran, including precision/offload."""
         return {}
@@ -144,7 +148,11 @@ _BACKENDS: dict[str, str] = {
     "sf3d": "arcdemo.worker.backends.sf3d:StableFast3D",
     "stable_audio3": "arcdemo.worker.backends.stable_audio3:StableAudio3",
     "music_stub": "arcdemo.worker.backends.music_stub:MusicStub",
-    "mock": "arcdemo.worker.backends.mock:MockBackend",   # every non-music model when mock: true (music: music_stub)
+    "llama_server": "arcdemo.worker.backends.llm:LlamaServer",
+    "llm_mock": "arcdemo.worker.backends.llm:LlmMock",
+    "llama_layout": "arcdemo.worker.backends.layout:LayoutServer",
+    "layout_mock": "arcdemo.worker.backends.layout:LayoutMock",
+    "mock": "arcdemo.worker.backends.mock:MockBackend",   # t2i/i23d models when mock: true (music_stub, llm_mock)
 }
 
 

@@ -14,6 +14,8 @@ chosen because it runs on a CPU and on a CUDA GPU, so every cell of the stage ca
 | 1 · text-to-image | SD 1.5 (`sd15`) | `stable-diffusion-v1-5/stable-diffusion-v1-5` | 5.2 GB | CPU (fp32), any GPU from 4 GB (fp16) |
 | 2 · image-to-3D | Stable Fast 3D (`sf3d`) | `stabilityai/stable-fast-3d` + `facebook/dinov2-large` + `laion/CLIP-ViT-B-32-laion2B-s34B-b79K` | 5.6 GB | CPU, CUDA GPU with ≥ 6 GB VRAM (out of memory on a 4 GB card) |
 | 3 · music | Stable Audio 3.0 Small (`sa3-small-music`) | `stabilityai/stable-audio-3-small-music` (text encoder included) | 3.5 GB | CPU, any CUDA GPU (no flash-attn needed) |
+| 4 · language model | Qwen3.5 4B Q4_K_M (`qwen35-4b`), served by llama.cpp | `bartowski/Qwen_Qwen3.5-4B-GGUF` (one file) | 2.7 GB | CPU, any CUDA GPU from 4 GB |
+| 8 · scene construction | the same file (`qwen35-4b-layout`), placing furniture on a floor plan | same as task 4, no extra download | — | CPU, any CUDA GPU from 4 GB |
 
 `stabilityai/*` repos are gated: the account behind `HF_TOKEN` must accept each licence on its
 model page first. Machines differ only in settings (batch, steps, texture size), not in model.
@@ -29,6 +31,8 @@ place of `demo.yaml` once these weights are on each machine (download with
 | t2i | SD 3.5 Large `stabilityai/stable-diffusion-3.5-large` (38.8 GB) and SD 3.5 Medium | SD 3.5 Medium, T5 int8 `stabilityai/stable-diffusion-3.5-medium` (27.4 GB) | SD 3.5 Medium without T5, SD 1.5 fallback |
 | i23d | TRELLIS.2 4B `microsoft/TRELLIS.2-4B` (16.2 GB) + `facebook/dinov3-vitl16-pretrain-lvd1689m` (1.2 GB) + `briaai/RMBG-2.0` (5.4 GB) | TRELLIS v1 `microsoft/TRELLIS-image-large` (3.3 GB), plus TRELLIS.2 for the OOM segment | Stable Fast 3D |
 | music | Stable Audio 3.0 Medium `stabilityai/stable-audio-3-medium` (10.4 GB) | Stable Audio 3.0 Medium | Stable Audio 3.0 Small |
+| llm | Qwen3.5 122B-A10B Q4_K_M (~75 GB, one H200) | Qwen3.5 9B Q4_K_M (~5.7 GB) | Qwen3.5 4B Q4_K_M |
+| layout | the same files as llm (`*-layout` keys): seg9 becomes "bigger model, better room" | | |
 
 Notes: `facebook/dinov3-*` and `briaai/RMBG-2.0` are gated with *manual* approval (allow days);
 RMBG-2.0 is CC BY-NC. TRELLIS and TRELLIS.2 are Linux-only (`requirements/i23d.txt`). Stable Audio
@@ -41,6 +45,8 @@ Also switch each worker's `preload` to the full-matrix models named in its comme
  │ conductor  :8000              │ ────────────▶ │ worker t2i   :8101  (diffusers env)        │
  │  /stage     projector page    │ ◀──────────── │ worker i23d  :8102  (SF3D / TRELLIS env)   │
  │                               │               │ worker music :8103  (Stable Audio 3 env)   │
+ │                               │               │ worker llm   :8104  (llama-server)         │
+ │                               │               │ worker layout:8105  (llama-server, llm env)│
  │  /operator  controls          │  status+files │  model loaded at start, clock runs HERE   │
  │  replay/    rehearsal results │               └──────────────────────────────────────────┘
  │  session/   runs.jsonl, logs  │
@@ -54,7 +60,7 @@ python -m venv .venv && .venv/Scripts/pip install -r requirements/conductor.txt 
 python scripts/run_mock_demo.py          # 3 mock workers + conductor
 # operator: http://127.0.0.1:8000/operator     stage: http://127.0.0.1:8000/stage
 python scripts/rehearse.py --config config/demo-mock.yaml --segments seg2,seg3 --repeat 1   # fills replay-mock/
-python -m pytest                         # 18 tests (the 4 Stable Audio ones need torch): config validation, scoring, worker lifecycle, conductor + failure drill
+python -m pytest                         # 34 tests (the Stable Audio ones need torch): config validation, scoring, worker lifecycle, conductor + failure drill
 ```
 
 Mock cells carry a **MOCK** badge; their timings are invented and are never results.
@@ -98,14 +104,18 @@ export HF_TOKEN=<from config.txt>                       # account must have acce
 python scripts/download_weights.py --machine <dgx|workstation> --task t2i     # SD 1.5
 python scripts/download_weights.py --machine <dgx|workstation> --task i23d    # SF3D + its two encoders
 python scripts/download_weights.py --machine <dgx|workstation> --task music   # Stable Audio 3 Small
+python scripts/download_weights.py --machine <dgx|workstation> --task llm     # Qwen3.5 4B, Q4_K_M file only
 # t2i env:   CUDA torch first, then  pip install -r requirements/t2i-gpu.txt
 # i23d env:  CUDA torch, then clone third_party/stable-fast-3d and install as in scripts/cpu/ (SF3D);
 #            for the full matrix, TRELLIS instead: header of requirements/i23d.txt (Linux only)
 # music env: header of requirements/music.txt (torch 2.7.1 + third_party/stable-audio-3)
+# llm env:   requirements/llm.txt (no torch) + the pinned llama.cpp release in third_party/llama.cpp/bin
 unset HF_TOKEN; export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 python scripts/verify_offline.py --config config/worker-<machine>.yaml --task t2i    # must print PASS
 python scripts/verify_offline.py --config config/worker-<machine>.yaml --task i23d
 python scripts/verify_offline.py --config config/worker-<machine>.yaml --task music
+python scripts/verify_offline.py --config config/worker-<machine>.yaml --task llm
+python scripts/verify_offline.py --config config/worker-<machine>.yaml --task layout   # same weights as llm
 ```
 
 For the full matrix add `--config config/demo-full.yaml` to `download_weights.py` and
@@ -120,6 +130,8 @@ export HF_HUB_OFFLINE=1 ARC_DEMO_TOKEN=<shared secret>
 python -m arcdemo.worker --config config/worker-dgx.yaml --task t2i  --port 8101   # in the t2i env
 python -m arcdemo.worker --config config/worker-dgx.yaml --task i23d --port 8102   # in the i23d env
 python -m arcdemo.worker --config config/worker-dgx.yaml --task music --port 8103  # in the music env
+python -m arcdemo.worker --config config/worker-dgx.yaml --task llm   --port 8104  # in the llm env
+python -m arcdemo.worker --config config/worker-dgx.yaml --task layout --port 8105 # in the llm env
 curl http://localhost:8101/health
 ```
 
@@ -167,6 +179,39 @@ start** → **3 Running now**.
    *More options* holds forced recordings and a different time limit.
 6. **Summary chart** on the projector for the close.
 
+## Task 8 (Furnish the room) in the demo interface
+
+The language model places furniture on a floor plan, one line per object. The stage shows what the
+model was asked, what it writes, and the room it builds. Background: `Task 8 — Scene construction.md`
+and `docs/Task 8 — Layout model review.md`.
+
+**On a laptop with the real model** (CPU; uses the Task 4 weights and llama.cpp, see 1b):
+
+```bash
+python -m arcdemo.worker --config config/worker-local-cpu.yaml --task layout --port 9242   # llm env
+python -m arcdemo.conductor --config config/demo-local-cpu.yaml
+# operator: http://127.0.0.1:8000/operator#seg=local-layout-q&input=lay-02    stage: http://127.0.0.1:8000/stage
+```
+
+**At the show:** each machine runs the layout worker on port 8105 (section 2, `--task layout`, llm
+env), and the parts are *Furnish the room* (seg8) and *Rooms in a minute* (seg9).
+**Without a model:** `scripts/run_mock_demo.py`, where the mock workers serve layout too, with placeholder rooms.
+
+1. Pick **Furnish the room**. *What will run* shows the floor plan with the wall names the model uses,
+   the request in one sentence, and, under **Prompt**, exactly what the model is sent (rules, two
+   worked examples, this room, and the grammar).
+2. **Load the AI model on all machines.** Loading plus the prompt warm-up takes about 2 minutes on a CPU and is off the clock.
+3. Choose the room under **Example prompt** (bedroom, L-shaped living room, library) and **▶ Start**.
+
+What the projector shows:
+
+- **Header:** the plan thumbnail (wall names, the door in yellow) and the request in words.
+- **Each machine's cell, left:** the 3D room. Each piece of furniture drops in as the model writes its line, numbered in placement order. Flagged pieces get a red frame: outside the walls, overlapping, or blocking the door. They are never corrected.
+- **Each machine's cell, right:** *What the model wrote*. The model's lines appear as they are written, numbered like the scene labels, in red with the reason when flagged.
+- **Result:** time, number of objects and flags.
+
+On the laptop CPU the first object appears after about 30 s and a room takes 55–75 s. The 3D view needs WebGL; without it the stage falls back to the box view.
+
 ## Debugging
 
 Every log line has a time and a source; worker lines carry the job's short run_id, which the conductor
@@ -188,11 +233,11 @@ logs when it dispatches, so one grep follows a cell end to end.
 | --- | --- |
 | `arcdemo/schemas.py` | the job/result wire format shared by both sides |
 | `arcdemo/worker/` | FastAPI worker, job runner, timing/memory measurement, model backends |
-| `arcdemo/worker/backends/` | `diffusers_t2i` (SD 3.5 / 1.5), `trellis` (TRELLIS.2, v1), `sf3d`, `stable_audio3` (Small / Medium), `music_stub` + `mock` (mock workers) |
+| `arcdemo/worker/backends/` | `diffusers_t2i` (SD 3.5 / 1.5), `trellis` (TRELLIS.2, v1), `sf3d`, `stable_audio3` (Small / Medium), `llm` (llama-server; `LlmMock`), `layout` (task 8 on the same llama-server: prompt, grammar, room checks; `LayoutMock`), `music_stub` + `mock` (mock workers) |
 | `arcdemo/conductor/` | dispatcher + fallback (`core.py`), replay table, prompt check, web app, stage/operator pages |
 | `arcdemo/scoring.py` | Chamfer / F-score against the GSO scan, axis-convention independent |
 | `config/` | `demo.yaml` (single-model show), `demo-full.yaml` (largest model per machine), `models.yaml`, one worker config per machine |
-| `data/` | stage prompts, rehearsal prompts (PartiPrompts), GSO inputs + ground truth, music inputs |
+| `data/` | stage prompts, rehearsal prompts (PartiPrompts), GSO inputs + ground truth, music inputs, LLM prompts |
 | `scripts/` | download, verify offline, prepare GSO, rehearse, mock dry-run |
 | `scripts/cpu/` | CPU box: `cpu_box_linux.sh`, `cpu_box_windows.ps1` (setup / start / status / stop; workers :8101–8103), `check_cpu.py` |
 | `third_party/` | `stable-fast-3d`, `stable-audio-3` (git clones; not pip packages) |

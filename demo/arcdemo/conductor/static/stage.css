@@ -60,6 +60,7 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink);
 .model .settings { display: block; color: var(--ink-2); font-size: 1.05vw; margin-top: .3vh; }
 .clock { font-size: 4.6vw; font-weight: 700; line-height: 1; }
 .clock.done { color: var(--c); }
+.clock small { font-size: .35em; font-weight: 600; color: var(--ink-3); }
 .bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
 .bar > i { display: block; height: 100%; width: 0; background: var(--c); transition: width .25s linear; }
 .stage-text { font-size: 1vw; color: var(--ink-3); min-height: 1.3em; }
@@ -77,6 +78,47 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink);
 .outputs.n1 img { width: auto; height: 100%; max-width: 100%; object-fit: contain; }
 .outputs model-viewer { width: 100%; height: 100%; min-height: 30vh; background: #0000;
   --poster-color: transparent; }
+.llm-text { width: 100%; height: 100%; overflow: hidden; white-space: pre-wrap; text-align: left;
+  font-size: 1.15vw; line-height: 1.45; color: var(--ink); background: #0006; border-radius: 6px; padding: 1vh .8vw; }
+.outputs:has(> .layout-canvas), .layout-scene { position: relative; }
+.layout-wrap { display: flex; gap: .6vw; width: 100%; height: 100%; min-height: 0; }
+.layout-scene { flex: 1; min-width: 0; }
+.layout-console { width: 38%; display: flex; flex-direction: column; min-height: 0; background: #0007;
+  border: 1px solid var(--line); border-radius: 6px; padding: .6vh .5vw; font-family: Consolas, "Cascadia Mono", monospace; }
+.layout-console .con-head { font-family: "Segoe UI", system-ui, sans-serif; font-size: .7vw; color: var(--ink-3);
+  text-transform: uppercase; letter-spacing: .08em; margin-bottom: .4vh; }
+.layout-console .con-body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column;
+  justify-content: flex-end; gap: .25vh; }   /* newest at the bottom; older lines scroll off the top */
+.layout-console .con-line { font-size: .66vw; line-height: 1.3; color: var(--ink-2); white-space: pre-wrap;
+  word-break: break-word; padding-left: 1.6em; text-indent: -1.6em; }
+.layout-console .con-line .n { display: inline-block; width: 1.6em; text-indent: 0; color: var(--ink-3); }
+.layout-console .con-line.new { color: #fff; animation: land .35s ease-out; }
+.layout-console .con-line.bad { color: #ffb3b3; }
+.layout-console .con-line .why { color: var(--bad); font-family: "Segoe UI", system-ui, sans-serif; font-size: .9em; }
+.layout-console .con-line.caret { color: var(--live); animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.round-head .input.layout-ask { align-items: center; gap: 1.2vw; }
+.plan-svg { height: 12vh; width: auto; flex: none; overflow: visible; }
+/* layout rounds: the scene is the result, so the clock is compact and the request lives in the header */
+.cell.task-layout .clock { font-size: 3vw; }
+.cell.task-layout .model .settings { display: none; }
+.cell.task-layout { gap: .7vh; }
+.plan-svg .floor { fill: #b79a7433; stroke: var(--ink-2); stroke-width: .08; }
+.plan-svg .wname { font-size: .62px; fill: var(--ink-2); text-anchor: middle; dominant-baseline: middle;
+  font-family: Consolas, monospace; }
+.plan-svg .wname.door { fill: #ffd24a; }
+.plan-svg circle.door { fill: #ffd24a; }
+.plan-svg .north { font-size: .5px; fill: var(--ink-3); }
+.layout-ask .ask-title { font-size: 1.45vw; color: var(--ink); }
+.layout-ask .ask-line { font-size: 1.15vw; color: var(--ink-2); margin-top: .3vh; }
+.layout-ask .ask-note { font-size: .9vw; color: var(--ink-3); margin-top: .3vh; }
+.layout-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.layout-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.layout-labels .lbl { position: absolute; transform: translate(-50%, -100%); white-space: nowrap; font-size: .72vw;
+  padding: .1em .45em; border-radius: 4px; background: #0b0d10cc; color: #c9d1db; }
+.layout-labels .lbl.new { color: #fff; font-weight: 700; font-size: .85vw; }
+.layout-labels .lbl.bad { background: #5a1515e6; color: #ffb3b3; }
+.layout-labels .lbl.door { background: none; color: #ffd24a; font-weight: 600; }
 @keyframes land { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
 .result { font-size: 1.35vw; font-weight: 600; min-height: 1.4em; }
 .result.oom { color: var(--bad); font-size: 2vw; font-weight: 800; }

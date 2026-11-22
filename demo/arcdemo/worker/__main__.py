@@ -13,7 +13,7 @@ from .app import ROOT, create_app, load_worker_config
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--config", required=True)
-    p.add_argument("--task", required=True, help="t2i | i23d | music, or a comma list (mock workers)")
+    p.add_argument("--task", required=True, help="t2i | i23d | music | llm | layout, or a comma list (mock workers)")
     p.add_argument("--host", default="0.0.0.0")
     p.add_argument("--port", type=int, default=8101)
     a = p.parse_args()

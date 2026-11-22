@@ -1,0 +1,8 @@
+[
+  {"id": "llm-01", "seed": 3001, "label": "GPUs explained", "exposes": "Short factual answer; identical text when greedy",
+   "prompt": "Explain to a ten-year-old, in about 150 words, why a graphics card can do many calculations at once."},
+  {"id": "llm-02", "seed": 3002, "label": "Cairo itinerary", "exposes": "Long structured output",
+   "prompt": "Plan a three-day visit to Cairo for an architecture student: one paragraph per day, naming real buildings."},
+  {"id": "llm-03", "seed": 3003, "label": "Short story", "exposes": "Long free-form output",
+   "prompt": "Write a 400-word story about a lighthouse keeper who discovers the lighthouse can talk."}
+]

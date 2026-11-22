@@ -116,6 +116,34 @@ def create_app(cfg: DemoConfig) -> FastAPI:
         except KeyError as e:
             raise HTTPException(404, str(e))
 
+    @app.get("/api/layout_view")
+    def layout_view_api(input_id: str) -> dict:
+        """A layout input plus its wall names and one-sentence request (operator plan thumbnail)."""
+        from .core import layout_view
+        try:
+            item = cfg.input("layout", input_id)
+        except KeyError as e:
+            raise HTTPException(404, str(e))
+        return {**item, **layout_view(item)}
+
+    @app.get("/api/prompt")
+    def prompt_text(segment_id: str, input_id: str) -> dict:
+        """What the model will be sent for this segment and input (layout and llm tasks)."""
+        from .core import layout_prompt_text
+        try:
+            seg = cfg.segment(segment_id)
+            item = cfg.input(seg["task"], input_id)
+        except KeyError as e:
+            raise HTTPException(404, str(e))
+        if seg["task"] == "layout":
+            mids = [m["id"] for m in cfg.machines]
+            s = cfg.settings("layout", seg["protocol"], mids[0]) if mids else {}
+            return {"task": "layout", "text": layout_prompt_text(item, s.get("max_objects"))}
+        if seg["task"] == "llm":
+            from ..worker.backends.llm import SYSTEM
+            return {"task": "llm", "text": f"=== system ===\n{SYSTEM}\n\n=== user ===\n{item.get('prompt', '')}"}
+        return {"task": seg["task"], "text": None}
+
     @app.post("/api/prepare")
     async def prepare(body: SegmentBody) -> dict:
         return await cond.prepare(body.segment_id)

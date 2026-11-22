@@ -23,6 +23,8 @@ machines:
       t2i: http://dgx.local:8101
       i23d: http://dgx.local:8102
       music: http://dgx.local:8103
+      llm: http://dgx.local:8104
+      layout: http://dgx.local:8105
   - id: workstation
     label: "Workstation"
     hardware: "1 GPU · 16 GB VRAM"
@@ -32,6 +34,8 @@ machines:
       t2i: http://workstation.local:8101
       i23d: http://workstation.local:8102
       music: http://workstation.local:8103
+      llm: http://workstation.local:8104
+      layout: http://workstation.local:8105
   - id: cpu
     label: "CPU only"
     hardware: "No GPU · 16 GB RAM"
@@ -42,11 +46,15 @@ machines:
       t2i: http://cpu.local:8101
       i23d: http://cpu.local:8102
       music: http://cpu.local:8103
+      llm: http://cpu.local:8104
+      layout: http://cpu.local:8105
 
 inputs:
   t2i: data/t2i/stage_prompts.json
   i23d: data/i23d/stage_objects.json
   music: data/music/stage_inputs.json
+  llm: data/llm/stage_prompts.json
+  layout: data/layout/stage_rooms.json
 
 # ------------------------------------------------------------------------------------------
 # Settings matrix. "all" applies to every machine; a machine key overrides it.
@@ -77,6 +85,22 @@ settings:
       dgx:         {model: sa3-medium,      length_s: 60, steps: 8, repeat_until_budget: true}
       workstation: {model: sa3-medium,      length_s: 60, steps: 8, repeat_until_budget: true}
       cpu:         {model: sa3-small-music, length_s: 60, steps: 8, repeat_until_budget: true}
+  llm:
+    iso_quality:   # the largest model all three can hold, identical everywhere
+      all:         {model: qwen35-4b, streams: 1, max_tokens: 256, temperature: 0}
+    iso_time:      # the ladder: only the DGX can hold the 122B
+      all:         {model: qwen35-4b, max_tokens: 512, temperature: 0.7, repeat_until_budget: true}
+      dgx:         {model: qwen35-122b-a10b, streams: 32}
+      workstation: {model: qwen35-9b, streams: 8}
+      cpu:         {model: qwen35-4b, streams: 1}
+
+  layout:
+    iso_quality:   # as the show: the same room on every machine, compare the time
+      all:         {model: qwen35-4b-layout, streams: 1, max_tokens: 400, temperature: 0}
+    iso_time:      # the ladder: one room each, the largest model each machine holds; compare the rooms
+      all:         {model: qwen35-4b-layout, streams: 1, max_tokens: 400, temperature: 0}
+      dgx:         {model: qwen35-122b-a10b-layout}
+      workstation: {model: qwen35-9b-layout}
 
 # ------------------------------------------------------------------------------------------
 # Run of show. The operator page shows these as buttons, in order.
@@ -125,3 +149,31 @@ segments:
     budget_seconds: 60
     inputs: [live]
     caption: "Each machine ran the largest model it could finish in {budget} seconds."
+  - id: seg6                       # task 4: language model race
+    title: "Same answer, different time"
+    task: llm
+    protocol: iso_quality
+    budget_seconds: null
+    inputs: [llm-01]
+    caption: "Same model, same prompt, greedy decoding on every machine. Only the clock differs."
+  - id: seg7
+    title: "Tokens in a minute"
+    task: llm
+    protocol: iso_time
+    budget_seconds: 60
+    inputs: [llm-02, llm-03]
+    caption: "Each machine ran the largest language model it can hold. Total tokens in {budget} seconds."
+  - id: seg8
+    title: "Furnish the room"
+    task: layout
+    protocol: iso_quality
+    budget_seconds: null
+    inputs: [lay-01, lay-02, lay-03]
+    caption: "Same model, same floor plan, greedy decoding: every machine builds the same room, one object at a time. Only the clock differs."
+  - id: seg9
+    title: "Bigger model, better room"
+    task: layout
+    protocol: iso_time
+    budget_seconds: 60
+    inputs: [lay-02, lay-03]
+    caption: "Each machine ran the largest language model it holds, on the same floor plan, {budget} seconds each. Red outlines mark furniture outside the walls, overlapping, or blocking the door."

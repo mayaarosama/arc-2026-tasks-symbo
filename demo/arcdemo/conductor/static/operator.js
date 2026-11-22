@@ -103,6 +103,31 @@ async function loadPlan() {
   renderPlan(s, c, plan);
 }
 
+// Task 8 and Task 4: the exact text the model is sent, so the operator can show or explain it.
+async function showPrompt(s, c) {
+  const dt = document.getElementById("p-prompt-dt"), dd = document.getElementById("p-prompt-dd");
+  const show = (s.task === "layout" || s.task === "llm") && c.inputId && c.inputId !== "live";
+  dt.hidden = dd.hidden = !show;
+  if (!show) return;
+  const pre = document.getElementById("p-prompt");
+  pre.textContent = "loading…";
+  try {
+    const r = await (await fetch(`/api/prompt?segment_id=${encodeURIComponent(s.id)}&input_id=${encodeURIComponent(c.inputId)}`)).json();
+    pre.textContent = r.text || "—";
+  } catch (e) {
+    pre.textContent = "could not load the prompt";
+  }
+}
+
+// The plan thumbnail needs the wall names, which the conductor derives (same as the stage header).
+async function loadLayoutView(s, c, box) {
+  try {
+    const v = await (await fetch(`/api/layout_view?input_id=${encodeURIComponent(c.inputId)}`)).json();
+    box.appendChild(planSvg(v));
+    box.appendChild(el("div", "muted", v.ask));
+  } catch (e) { /* the label alone is enough */ }
+}
+
 function renderPlan(s, c, plan) {
   const budget = plan.budget_seconds;
   document.getElementById("p-task").textContent = TASK_NAME[s.task] || s.task;
@@ -121,9 +146,13 @@ function renderPlan(s, c, plan) {
     img.src = "/media-input/" + item.input;
     img.onerror = () => img.remove();
     inp.appendChild(img);
+  } else if (s.task === "layout" && item.floor_plan) {
+    inp.append(document.createTextNode(item.label));
+    loadLayoutView(s, c, inp);
   } else {
     inp.textContent = item.prompt ? `“${item.prompt}”` : item.label || "—";
   }
+  showPrompt(s, c);
   document.getElementById("p-protocol").textContent = protocolText(plan.protocol, budget);
 
   const ul = document.getElementById("p-expected");
@@ -290,7 +319,14 @@ Promise.all([
     b.onclick = () => api("/api/view", { view: v });
     views.appendChild(b);
   }
-  selectSegment(c.segments[0].id);
+  // open on a part / input from the URL, e.g. /operator#seg=seg8&input=lay-02
+  const h = new URLSearchParams(location.hash.slice(1));
+  const start = c.segments.find((x) => x.id === h.get("seg")) || c.segments[0];
+  selectSegment(start.id);
+  if (h.get("input") && document.querySelector(`#example option[value="input:${h.get("input")}"]`)) {
+    document.getElementById("example").value = "input:" + h.get("input");
+    onChoice();
+  }
   Demo.onState((s) => { renderHealth(s); renderCells(s); });
   Demo.poll(500);
 });

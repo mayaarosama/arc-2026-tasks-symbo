@@ -40,6 +40,13 @@
   .plan .task { font-size:17px; font-weight:600; }
   .plan .input-img { max-width:120px; max-height:90px; border-radius:6px; border:1px solid var(--line); display:block; margin-top:4px; background:#fff; }
   .plan ul { margin:0; padding-left:0; list-style:none; }
+  .plan .plan-svg { height:120px; width:auto; display:block; margin-top:6px; overflow:visible; }
+  .plan .plan-svg .floor { fill:#b79a7433; stroke:#9aa4b0; stroke-width:.08; }
+  .plan .plan-svg .wname { font-size:.62px; fill:#9aa4b0; text-anchor:middle; dominant-baseline:middle; font-family:Consolas,monospace; }
+  .plan .plan-svg .wname.door, .plan .plan-svg circle.door { fill:#ffd24a; }
+  .plan .plan-svg .north { font-size:.38px; fill:#6c7682; }
+  .plan .prompt-text { max-height:340px; overflow:auto; white-space:pre-wrap; font-size:11.5px; background:#0006;
+    border:1px solid var(--line); border-radius:6px; padding:8px; margin:6px 0 0; }
   .plan li { margin:0 0 6px; padding-left:10px; border-left:3px solid var(--c, #555); }
   .plan li .rec { font-size:12px; }
   /* running now */
@@ -66,6 +73,9 @@
         <dt>Input</dt><dd id="p-input">—</dd>
         <dt>Comparison</dt><dd id="p-protocol">—</dd>
         <dt>Expected output</dt><dd><ul id="p-expected"></ul></dd>
+        <dt id="p-prompt-dt" hidden>Prompt</dt>
+        <dd id="p-prompt-dd" hidden><details><summary>Show exactly what the model is sent</summary>
+          <pre id="p-prompt" class="prompt-text"></pre></details></dd>
       </dl>
     </section>
 

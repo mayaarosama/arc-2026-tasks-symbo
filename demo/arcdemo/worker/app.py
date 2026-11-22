@@ -32,7 +32,7 @@ from fastapi.responses import FileResponse
 
 from ..schemas import TERMINAL, HealthInfo, JobRequest, JobResult, LoadRequest
 from .backends.base import Backend, JobContext, backend_class, free_memory, is_oom
-from .metrics import Clock, MemoryMeter
+from .metrics import Clock
 
 ROOT = Path(__file__).resolve().parents[2]          # demo/
 log = logging.getLogger("arcdemo.worker")
@@ -73,8 +73,8 @@ class ModelManager:
             if spec["task"] not in self.cfg["tasks"]:
                 raise ValueError(f"model '{key}' is a {spec['task']} model; this worker serves {self.cfg['tasks']}")
             name = spec["backend"]
-            if self.cfg.get("mock"):   # music has no timing model: mock workers write a placeholder tone
-                name = "music_stub" if spec["task"] == "music" else "mock"
+            if self.cfg.get("mock"):   # music and llm have their own stand-ins (tone, canned text)
+                name = {"music": "music_stub", "llm": "llm_mock", "layout": "layout_mock"}.get(spec["task"], "mock")
             backend = backend_class(name)(key, spec, self.cfg, self.devices_for(key))
             self.loading = key
             log.info("loading %s (%s) on %s", key, name, backend.devices)
@@ -130,7 +130,10 @@ class JobRunner:
         with self.lock:
             if self.active is not None and self.active.result.status not in TERMINAL:
                 raise HTTPException(409, f"busy with {self.active.req.run_id}")
-            requested = max(1, req.batch) if req.task == "t2i" else (0 if req.task == "music" else 1)
+            # 0 = throughput run (as many as fit in the budget): nothing is "missing" at the bell
+            requested = {"t2i": max(1, req.batch), "music": 0,
+                         "llm": 0 if req.repeat_until_budget else max(1, req.streams),
+                         "layout": 0 if req.repeat_until_budget else max(1, req.streams)}.get(req.task, 1)
             result = JobResult(run_id=req.run_id, machine=self.cfg["machine"], task=req.task,
                                model=req.model, model_repo=self.cfg["models"].get(req.model, {}).get("repo", ""),
                                input_id=req.input_id, protocol=req.protocol, requested=requested)
@@ -168,7 +171,7 @@ class JobRunner:
             r.status = "running"
             log.info("[%s] clock start | settings %s", req.run_id[:6], r.settings)
             job.clock.start()
-            with MemoryMeter(backend.devices) as mem:
+            with backend.memory_meter() as mem:
                 backend.generate(req, ctx)
             r.peak_memory_mb = round(mem.peak_allocated_mb or 0, 1)
             r.peak_reserved_mb = None if mem.peak_reserved_mb is None else round(mem.peak_reserved_mb, 1)
@@ -206,6 +209,13 @@ def _request_settings(req: JobRequest) -> dict:
     if req.task == "i23d":
         return {k: v for k, v in {"resolution": req.resolution, "texture_size": req.texture_size,
                                   "seed": req.seed}.items() if v is not None}
+    if req.task == "llm":
+        return {"streams": req.streams, "max_tokens": req.max_tokens, "temperature": req.temperature,
+                "seed": req.seed, "repeat_until_budget": req.repeat_until_budget}
+    if req.task == "layout":
+        return {"room_type": req.room_type, "max_objects": req.max_objects, "streams": req.streams,
+                "max_tokens": req.max_tokens, "temperature": req.temperature, "seed": req.seed,
+                "repeat_until_budget": req.repeat_until_budget}
     return {"length_s": req.length_s, "seed": req.seed, "repeat_until_budget": req.repeat_until_budget}
 
 
@@ -252,7 +262,8 @@ def create_app(cfg: dict) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         env_cache.update(env_report(cfg))   # slow (scans installed packages): do it once, here
-        if any(d == "cpu" for t in cfg["tasks"] for d in cfg["devices"].get(t, [])) and not cfg.get("mock"):
+        torch_tasks = [t for t in cfg["tasks"] if t not in ("llm", "layout")]   # llama-server sets its own threads
+        if any(d == "cpu" for t in torch_tasks for d in cfg["devices"].get(t, [])) and not cfg.get("mock"):
             import psutil
             import torch
             torch.set_num_threads(int(cfg.get("cpu_threads") or psutil.cpu_count(logical=False) or 1))

@@ -30,7 +30,7 @@ function buildRound(round) {
   built = { roundId: round.id, cells: {} };
   for (const mid of round.order) {
     const c = round.cells[mid];
-    const root = el("div", "cell");
+    const root = el("div", "cell task-" + round.task);
     root.style.setProperty("--c", c.color);
     const head = el("div", "cell-head");
     const who = el("div");
@@ -60,11 +60,18 @@ function buildRound(round) {
     el("b", null, "   ·   Model "), document.createTextNode(models.length === 1 ? `${models[0]}, same on every machine` : models.join(" / ")));
   const ibox = document.getElementById("r-input");
   ibox.replaceChildren();
+  ibox.classList.remove("layout-ask");
   if (round.task === "i23d" && inp.input) {
     const img = el("img");
     img.src = "/media-input/" + inp.input;
     img.onerror = () => img.remove();
     ibox.append(img, el("span", null, `${inp.label} · ${inp.tier} · from Google Scanned Objects`));
+  } else if (round.task === "layout") {   // what the model is asked: the plan with its wall names, in words
+    ibox.classList.add("layout-ask");
+    const txt = el("div", "ask");
+    txt.append(el("div", "ask-title", inp.label), el("div", "ask-line", inp.ask || ""),
+      el("div", "ask-note", "The model sees the walls by these names and writes one line per object."));
+    ibox.append(planSvg(inp), txt);
   } else {
     ibox.append(el("span", null, inp.prompt ? `“${inp.prompt}”` : inp.label || inp.id));
   }
@@ -88,6 +95,13 @@ function updateCellStatic(round, mid) {
     const what = round.task === "t2i" ? `${c.completed} of ${total} ` : "";
     res = `Recorded run: ${what}finished in ${fmtShort(c.recorded.seconds)}`;
     cls += " recorded";
+  } else if (finished && round.task === "layout" && c.status !== "out_of_memory" && (c.objects || []).length) {
+    const objs = Layout.visible(round, c);
+    res = throughput(round, c) ? `${roomsText(c.completed)} in ${round.budget_seconds} s`
+                               : `Finished in ${fmtShort(c.final_seconds)} · ${Layout.tally(objs)}`;
+  } else if (finished && round.task === "llm" && c.status !== "out_of_memory" && c.tokens) {
+    res = round.protocol === "iso_quality" ? `Finished in ${fmtShort(c.final_seconds)} · ${tpsText(c.tokens_per_second)}`
+                                           : tokenText(c.tokens, c.tokens_per_second);
   } else if (finished) {
     if (c.status === "out_of_memory") { res = "Out of memory"; cls += " oom"; }
     else if (c.status === "ok") res = round.task === "t2i" ? `${c.completed} of ${total} in ${fmtShort(c.final_seconds)}`
@@ -119,6 +133,30 @@ function updateCellStatic(round, mid) {
     b.shown.clear();
   }
   b.outputs.dataset.mode = c.mode;
+  if (round.task === "layout") {   // objects, not files: drawn per frame in tick() so replays build up
+    // scene on the left, the model's own lines on the right
+    if (!b.layoutWrap || !b.layoutWrap.isConnected) {
+      b.layoutWrap = el("div", "layout-wrap");
+      b.scene = el("div", "layout-scene");
+      b.console = el("div", "layout-console");
+      b.layoutWrap.append(b.scene, b.console);
+      b.outputs.replaceChildren(b.layoutWrap);
+      b.layout = null;
+      b.consoleKey = null;
+    }
+    // re-attach when the 3D view (a module, loaded after this script) takes over from the canvas one
+    if (!b.layout || b.layoutImpl !== Layout) {
+      b.layoutImpl = Layout;
+      b.layout = Layout.attach(b.scene);
+    }
+    b.outputs.className = "outputs n1";
+    return;
+  }
+  if (round.task === "llm") {   // text, not files: drawn per frame in tick() so replays type out
+    if (!b.text || !b.text.isConnected) { b.text = el("div", "llm-text"); b.outputs.replaceChildren(b.text); }
+    b.outputs.className = "outputs n1";
+    return;
+  }
   const n = round.task === "t2i" ? total : 1;
   b.outputs.className = "outputs n" + (n >= 8 ? 8 : n >= 3 ? 4 : n);
   for (const o of vis) {
@@ -159,7 +197,16 @@ function tick() {
       const b = built.cells[mid];
       const t = Demo.cellClock(round, c);
       const finished = Demo.cellFinished(round, c);
-      b.clock.textContent = c.mode === "PENDING" ? "—" : fmtClock(t);
+      if (b.text) drawText(round, c, b);
+      if (b.layout) { b.layoutImpl.draw(b.layout, round, c); drawConsole(round, c, b, finished); }
+      if (b.layout && throughput(round, c) && c.mode !== "PENDING") {   // layout iso-time: rooms finished
+        const n = c.mode === "REPLAY" && !c.recorded ? Demo.visibleOutputs(round, c).length : c.completed;
+        b.clock.replaceChildren(document.createTextNode(fmtInt(n)), el("small", null, n === 1 ? " room" : " rooms"));
+      } else if (b.text && round.budget_seconds && c.mode !== "PENDING") {   // llm iso-time: the clocks tie, tokens differ
+        b.clock.replaceChildren(document.createTextNode(fmtInt(b.tokens)), el("small", null, " tokens"));
+      } else {
+        b.clock.textContent = c.mode === "PENDING" ? "—" : fmtClock(t);
+      }
       b.clock.classList.toggle("done", finished && c.status === "ok");
       b.fill.style.width = (100 * progressFraction(round, c, finished)).toFixed(1) + "%";
       b.stageText.textContent = finished ? "" : stageLine(round, c);
@@ -180,12 +227,49 @@ function tick() {
   requestAnimationFrame(tick);
 }
 
+// Task 8: the lines the model has written so far, numbered like the labels in the scene; red when
+// the room checks flag the object. Rebuilt only when something changes.
+function drawConsole(round, c, b, finished) {
+  const objs = Layout.visible(round, c);
+  const writing = !finished && c.mode !== "PENDING" && !c.recorded;
+  const key = `${objs.length}|${writing}|${c.mode}|${c.status}|${objs.length ? objs[0].room || 0 : 0}`;
+  if (key === b.consoleKey) return;
+  b.consoleKey = key;
+  const body = el("div", "con-body");
+  objs.forEach((o, k) => {
+    const bad = o.issues && o.issues.length;
+    const line = el("div", "con-line" + (bad ? " bad" : "") + (k === objs.length - 1 && writing ? " new" : ""));
+    line.append(el("span", "n", String(o.i + 1)), el("span", "t", layoutLine(o)));
+    if (bad) line.appendChild(el("span", "why", " ← " + o.issues.join(", ")));
+    body.appendChild(line);
+  });
+  if (writing) body.appendChild(el("div", "con-line caret", c.status === "loading" ? "loading the model…" : "▍"));
+  if (!objs.length && !writing) body.appendChild(el("div", "con-line", "—"));
+  b.console.replaceChildren(el("div", "con-head", "What the model wrote"), body);
+}
+
+// Live: the worker's current reply. Replay: the recorded reply types out over its recorded time.
+function drawText(round, c, b) {
+  const full = c.text || "";
+  const frac = c.mode === "REPLAY" && !c.recorded && c.final_seconds ? Math.min(1, Demo.elapsed(round) / c.final_seconds) : 1;
+  const txt = full.slice(0, Math.round(full.length * frac));
+  if (b.text.textContent !== txt) {
+    b.text.textContent = txt;
+    b.text.scrollTop = b.text.scrollHeight;
+  }
+  b.tokens = Math.round((c.tokens || 0) * frac);
+}
+
 function progressFraction(round, c, finished) {
   if (finished) return 1;
   if (c.mode === "REPLAY" && c.final_seconds) return Math.min(1, Demo.elapsed(round) / c.final_seconds);
   const p = c.progress;
   if (!p) return 0;
   if (round.task === "t2i" && p.total) return Math.min(1, (p.done + (p.steps ? p.step / p.steps : 0)) / p.total);
+  if (round.task === "layout") return round.budget_seconds ? Math.min(1, Demo.elapsed(round) / round.budget_seconds)
+    : Math.min(1, (p.step || 0) / (p.steps || 10));
+  if (round.task === "llm") return round.budget_seconds ? Math.min(1, Demo.elapsed(round) / round.budget_seconds)
+    : Math.min(1, (c.tokens || 0) / ((c.settings.max_tokens || 256) * (c.settings.streams || 1)));
   // 3D has no step count: advance against the rehearsal time, never past 95% until it lands
   if (c.reference && c.reference.seconds) return Math.min(0.95, Demo.elapsed(round) / c.reference.seconds);
   return 0;
@@ -196,6 +280,9 @@ function stageLine(round, c) {
   const p = c.progress;
   if (!p) return c.status === "loading" ? "Loading model…" : "";
   if (round.task === "t2i" && p.steps) return `Image ${Math.min(p.done + 1, p.total)} of ${p.total} · step ${p.step}/${p.steps}`;
+  if (round.task === "llm") return `${p.stage} · ${tokenText(c.tokens, c.tokens_per_second)}`;
+  if (round.task === "layout") return throughput(round, c) ? `${p.stage} · ${fmtInt(c.completed)} finished so far`
+    : `Placing object ${(p.step || 0) + 1}${p.steps ? ` of up to ${p.steps}` : ""} · ${tpsText(c.tokens_per_second)}`;
   return p.stage || "";
 }
 
@@ -210,6 +297,11 @@ function headline(round) {
     } else if (round.protocol === "iso_quality") {
       v = fin && c.status === "ok" ? fmtShort(c.final_seconds)
         : c.status === "out_of_memory" && fin ? "out of memory" : "still running";
+    } else if (round.task === "layout") {
+      v = !fin ? "…" : c.status === "out_of_memory" ? "out of memory"
+        : throughput(round, c) ? roomsText(c.completed) : Layout.tally(Layout.visible(round, c));
+    } else if (round.task === "llm") {
+      v = fin ? (c.status === "out_of_memory" ? "out of memory" : tpsText(c.tokens_per_second) || "no tokens") : "…";
     } else if (round.task === "t2i") {
       v = fin ? `${c.status === "ok" || c.status === "budget_exceeded" ? c.completed : 0} image${c.completed === 1 ? "" : "s"}` : "…";
     } else {
@@ -220,6 +312,10 @@ function headline(round) {
   }
   return parts.join("   ·   ");
 }
+
+// Layout throughput run (rooms repeated until the bell), as opposed to one room per machine.
+function throughput(round, c) { return round.task === "layout" && !!round.budget_seconds && !!c.settings.repeat_until_budget; }
+function roomsText(n) { return `${fmtInt(n || 0)} room${n === 1 ? "" : "s"} furnished`; }
 
 // ---------------------------------------------------------------- summary view --------
 function renderSummary(history) {
@@ -246,7 +342,7 @@ function renderSummary(history) {
       const w = ok ? scale(c.final_seconds) * 78 : 0;     // leave room for the label
       const fill = el("div", "fill");
       fill.style.width = w + "%";
-      const val = el("div", "val mono", summaryLabel(c));
+      const val = el("div", "val mono", summaryLabel(c, h.task));
       val.style.left = `calc(${w}% + 0.6vw)`;
       track.append(fill, val);
       line.appendChild(track);
@@ -257,12 +353,15 @@ function renderSummary(history) {
   }
 }
 
-function summaryLabel(c) {
+function summaryLabel(c, task) {
   const badge = c.mock ? "MOCK" : c.recorded ? "RECORDED" : c.mode;
   if (c.recorded) return `${c.requested > 1 ? `${c.completed}/${c.requested} · ` : ""}finished in ${fmtShort(c.recorded.seconds)} · ${c.model_label} · ${badge}`;
   if (c.status === "out_of_memory") return `out of memory · ${badge}`;
   if (c.status === "unavailable") return "no result";
-  const count = c.requested > 1 ? `${c.completed}/${c.requested} · ` : "";
+  const count = task === "layout" && c.layout
+    ? (c.requested === 0 ? `${roomsText(c.completed)} · ` : `${c.layout.objects} objects, ${c.layout.flagged} flagged · `)
+    : c.tokens ? tokenText(c.tokens, c.tokens_per_second) + " · "
+    : c.requested > 1 ? `${c.completed}/${c.requested} · ` : "";
   const sc = c.score && c.score.chamfer_x100 != null ? ` · error ${c.score.chamfer_x100.toFixed(2)}` : "";
   const t = c.status === "cancelled" ? `still running at ${fmtShort(c.final_seconds)}`
     : c.status === "budget_exceeded" && !c.completed ? "did not finish" : fmtShort(c.final_seconds);

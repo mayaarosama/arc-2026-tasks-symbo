@@ -38,6 +38,55 @@ from .replay import ReplayStore, settings_hash
 log = logging.getLogger("arcdemo.conductor")
 MEDIA_SESSION = "/media"
 MEDIA_REPLAY = "/replay-media"
+LLM_FIELDS = ("tokens", "tokens_per_second", "first_token_seconds", "text", "objects")
+
+
+def _llm_fields(res: dict) -> dict:
+    """llm / layout counters and stream-0 content from a worker result (empty for the other tasks)."""
+    out = {k: res.get(k) for k in LLM_FIELDS}
+    out["objects"] = out["objects"] or []
+    return out
+
+
+def layout_view(item: dict) -> dict:
+    """What the stage shows about a layout prompt: the wall names the model uses (with their
+    end points, for the plan thumbnail), the door's wall, and the request in one plain sentence."""
+    from ..layout_prompt import _angled, _door_wall, _not_floor, walls
+    plan = item["floor_plan"]
+    named = walls(plan)
+    ends = {n: ([w["span"][0], w["fixed"]], [w["span"][1], w["fixed"]]) if w["axis"] == "x"
+            else ([w["fixed"], w["span"][0]], [w["fixed"], w["span"][1]]) for n, w in named.items()}
+    xs, ys = [p[0] for p in plan], [p[1] for p in plan]
+    shape = ("an angled wall" if _angled(plan) else "an L-shape" if _not_floor(plan) else "")
+    spec = {"floor_plan": plan, "door": item.get("door")}
+    door = _door_wall(spec) if item.get("door") else None
+    room = item["room_type"].replace("_", " ")
+    ask = (f"Furnish this {room}: {max(xs) - min(xs):g} × {max(ys) - min(ys):g} m{' with ' + shape if shape else ''}"
+           f"{', door on the ' + door + ' wall' if door else ''}, up to {item.get('max_objects', 10)} pieces, "
+           "one line each: a wall piece names its wall, a free piece gives its spot.")
+    return {"walls": ends, "door_wall": door, "ask": ask}
+
+
+def layout_prompt_text(item: dict, max_objects: Optional[int] = None) -> str:
+    """The exact chat the model receives for this room, as plain text for the operator page."""
+    from ..layout_prompt import PROMPT_VERSION, grammar, messages
+    spec = {"room_type": item["room_type"], "floor_plan": item["floor_plan"], "door": item.get("door"),
+            "max_objects": int(max_objects or item.get("max_objects") or 10)}
+    parts = [f"# prompt {PROMPT_VERSION}"]
+    for m in messages(spec):
+        parts += ["", f"=== {m['role']} ===", m["content"].rstrip()]
+    parts += ["", "=== grammar (constrains the reply's syntax only) ===", grammar(spec)]
+    return "\n".join(parts)
+
+
+def _layout_summary(objects: Optional[list]) -> Optional[dict]:
+    """Objects and flagged problems in the last room stream 0 worked on (None for other tasks)."""
+    if not objects:
+        return None
+    last = max(o.get("room", 0) for o in objects)
+    room = [o for o in objects if o.get("room", 0) == last]
+    flagged = sum(1 for o in room if o.get("issues"))
+    return {"objects": len(room), "flagged": flagged}
 
 
 class Conductor:
@@ -179,6 +228,8 @@ class Conductor:
             if not mod["ok"] and not override:
                 raise PermissionError(f"prompt blocked: {', '.join(mod['hits'])}")
             item["prompt"] = prompt.strip()
+        if task == "layout":
+            item.update(layout_view(item))
         budget = budget_override if budget_override is not None else seg.get("budget_seconds")
         if run_to_completion:
             budget = None
@@ -209,7 +260,7 @@ class Conductor:
                 "outputs": [], "completed": 0, "requested": None, "final_seconds": None,
                 "progress": None, "note": "", "reference": None, "score": None, "mock": False,
                 "run_id": None, "result": None, "recorded": None,
-                "full_recording": bool(m.get("show_full_recording"))}
+                "full_recording": bool(m.get("show_full_recording")), **_llm_fields({})}
 
     async def _finish_round(self, rnd: dict) -> None:
         await asyncio.gather(*self._tasks.values(), return_exceptions=True)
@@ -358,7 +409,7 @@ class Conductor:
                           "MOCK" if cell["mock"] else "LIVE")
                 self._show_full_recording(rnd, mid, f"Time up at {budget:g} s", budget)
                 return
-            if budget is not None and task == "t2i" and elapsed > budget + self.cfg.grace:
+            if budget is not None and task in ("t2i", "llm", "layout") and elapsed > budget + self.cfg.grace:
                 await self._post_quiet(f"{url}/jobs/{job['run_id']}/cancel", f"cancel {mid}")
                 await self._fallback(rnd, mid, f"no result {self.cfg.grace:g}s after the budget")
                 return
@@ -403,6 +454,11 @@ class Conductor:
         elif task == "music":
             job.update(prompt=item.get("prompt"), mode=item.get("mode"), audio_path=item.get("audio"),
                        length_s=s.get("length_s", item.get("length_s")))
+        elif task == "llm":
+            job["prompt"] = item["prompt"]
+        elif task == "layout":
+            job.update(room_type=item["room_type"], floor_plan=item["floor_plan"], door=item.get("door"),
+                       max_objects=s.get("max_objects", item.get("max_objects")))
         return job
 
     @staticmethod
@@ -421,6 +477,7 @@ class Conductor:
         cell["progress"] = res.get("progress")
         cell["completed"] = res.get("completed", 0)
         cell["requested"] = res.get("requested")
+        cell.update(_llm_fields(res))
         if res.get("message"):
             cell["note"] = res["message"]
         for name in res.get("outputs", []):
@@ -478,7 +535,7 @@ class Conductor:
                     final_seconds=self._final_seconds(r, rnd["budget_seconds"]),
                     note=reason + (" · settings changed since rehearsal" if rec["stale"] else ""),
                     score=rec.get("score"), model=rec["settings"].get("model", cell["model"]),
-                    model_label=self.cfg.model_label(rec["settings"].get("model", cell["model"])))
+                    model_label=self.cfg.model_label(rec["settings"].get("model", cell["model"])), **_llm_fields(r))
         if r.get("status") == "out_of_memory":
             cell["note"] = "Out of memory (rehearsal) — this model does not fit on this machine"
         elif r.get("status") == "budget_exceeded" and not r.get("completed"):
@@ -516,7 +573,7 @@ class Conductor:
                     note=f"{why} — showing the recorded full run"
                          + (" · settings changed since recording" if rec["stale"] else ""),
                     score=rec.get("score"), model=rec["settings"].get("model", cell["model"]),
-                    model_label=self.cfg.model_label(rec["settings"].get("model", cell["model"])))
+                    model_label=self.cfg.model_label(rec["settings"].get("model", cell["model"])), **_llm_fields(r))
         cell["_operator_replay"] = True       # the live poll loop, if still going, stops following
         self._log(rnd, mid, r, "REPLAY")
 
@@ -552,6 +609,8 @@ class Conductor:
                "generation_seconds": res.get("generation_seconds"), "export_seconds": res.get("export_seconds"),
                "completed": res.get("completed"), "requested": res.get("requested"),
                "peak_memory_mb": res.get("peak_memory_mb"), "peak_reserved_mb": res.get("peak_reserved_mb"),
+               "tokens": res.get("tokens"), "tokens_per_second": res.get("tokens_per_second"),
+               "first_token_seconds": res.get("first_token_seconds"),
                "worker_settings": res.get("settings"), "run_id": cell.get("run_id"),
                "outputs": [o["path"] for o in cell["outputs"]]}
         if rnd["input"]["id"] == "live":
@@ -564,5 +623,7 @@ class Conductor:
                 "task": rnd["task"], "protocol": rnd["protocol"], "budget_seconds": rnd["budget_seconds"],
                 "input_id": rnd["input"]["id"], "input_label": rnd["input"].get("label", rnd["input"]["id"]),
                 "cells": {mid: {k: c.get(k) for k in ("mode", "status", "final_seconds", "completed",
-                                                      "requested", "model_label", "score", "mock", "recorded")}
+                                                      "requested", "model_label", "score", "mock", "recorded",
+                                                      "tokens", "tokens_per_second")}
+                              | {"layout": _layout_summary(c.get("objects"))}
                           for mid, c in rnd["cells"].items()}}

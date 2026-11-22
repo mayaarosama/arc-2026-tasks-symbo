@@ -1,0 +1,8 @@
+[
+  {"id": "lay-01", "seed": 8001, "label": "Bedroom · 3.8 × 3.4 m", "exposes": "Simple rectangle; the stopwatch room",
+   "room_type": "bedroom", "floor_plan": [[0, 0], [3.8, 0], [3.8, 3.4], [0, 3.4]], "door": [0.6, 0], "max_objects": 8},
+  {"id": "lay-02", "seed": 8002, "label": "L-shaped living room", "exposes": "Non-rectangular plan; the inside corner traps careless placement",
+   "room_type": "living_room", "floor_plan": [[0, 0], [6, 0], [6, 2.8], [3.5, 2.8], [3.5, 5], [0, 5]], "door": [6, 1.4], "max_objects": 10},
+  {"id": "lay-03", "seed": 8003, "label": "Library with a cut corner", "exposes": "Our own plan with an angled wall, outside any training set",
+   "room_type": "library", "floor_plan": [[0, 0], [5.5, 0], [5.5, 3.0], [4.3, 4.2], [0, 4.2]], "door": [2.5, 0], "max_objects": 10}
+]

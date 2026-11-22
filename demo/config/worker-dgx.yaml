@@ -2,6 +2,8 @@
 #   t2i : python -m arcdemo.worker --config config/worker-dgx.yaml --task t2i  --port 8101
 #   i23d: python -m arcdemo.worker --config config/worker-dgx.yaml --task i23d --port 8102
 #   music: python -m arcdemo.worker --config config/worker-dgx.yaml --task music --port 8103
+#   llm  : python -m arcdemo.worker --config config/worker-dgx.yaml --task llm   --port 8104
+#   layout: python -m arcdemo.worker --config config/worker-dgx.yaml --task layout --port 8105   (llm env)
 machine: dgx
 results_dir: results
 mock: false
@@ -9,8 +11,15 @@ devices:
   t2i: [cuda:0, cuda:1, cuda:2, cuda:3, cuda:4, cuda:5, cuda:6, cuda:7]   # TBC: GPU count
   i23d: [cuda:0]        # one mesh does not split across GPUs; resolution is the dial
   music: [cuda:0]
+  llm: [cuda:0]          # one GPU holds the model; concurrent streams are the dial
+  layout: [cuda:0]    # the same llama-server path as llm
 micro_batch: 1          # images per forward pass per device (batch 8 over 8 GPUs = 1 each)
 preload:                # loaded at service start so load time never enters a clock
   t2i: [sd15]           # single-model show (demo.yaml). Full matrix (demo-full.yaml): [sd35-large]
   i23d: [sf3d]          #                                                             [trellis2-4b]
   music: [sa3-small-music]  #                                                         [sa3-medium]
+  llm: [qwen35-4b]          #                                                         [qwen35-122b-a10b]
+  layout: [qwen35-4b-layout]  #                                                      [qwen35-122b-a10b-layout]
+llama_server: third_party/llama.cpp/bin/llama-server   # the same llama.cpp release on every machine
+llm_slots: 64             # >= the largest `streams` this machine runs in demo.yaml (llm and layout)
+# llm_ctx: 2048           # tokens per slot (llm worker). layout_ctx: 4096 (layout worker; prompt ~1,750 + 400 out)

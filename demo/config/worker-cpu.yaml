@@ -6,6 +6,8 @@ devices:
   t2i: [cpu]
   i23d: [cpu]
   music: [cpu]
+  llm: [cpu]
+  layout: [cpu]    # the same llama-server path as llm
 cpu_threads: null       # null = physical core count
 cpu_bf16: false         # set true only if the CPU has AMX / AVX512-BF16 (check: lscpu | grep -i bf16)
 micro_batch: 1
@@ -14,3 +16,7 @@ preload:               # single-model show (demo.yaml). Full matrix (demo-full.y
   t2i: [sd15]
   i23d: []              # SF3D loaded on "Prepare segment 3"; RAM cannot hold both comfortably
   music: []             # Stable Audio 3 Small loaded on "Prepare" of the music segment
+  llm: []
+  layout: []
+llama_server: third_party/llama.cpp/bin/llama-server   # the same llama.cpp release on every machine
+llm_slots: 1

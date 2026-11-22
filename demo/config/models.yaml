@@ -89,3 +89,55 @@ models:
     backend: music_stub
     repo: "(placeholder tone, no weights)"
     label: "Music model (stub)"
+
+  # ---------------- Task 4: language model race ----------------
+  # Served by llama.cpp's llama-server (backends/llm.py). `file` is a glob inside the repo, so
+  # download_weights.py fetches that one quantisation only. Q4_K_M on every machine: quantisation
+  # must be identical across machines or the comparison is meaningless. Apache 2.0, not gated.
+  qwen35-4b:               # single-model show: CPU, 4 GB laptop GPU, workstation, DGX (~2.7 GB)
+    task: llm
+    backend: llama_server
+    repo: bartowski/Qwen_Qwen3.5-4B-GGUF
+    file: "*Q4_K_M.gguf"
+    label: "Qwen3.5 4B · Q4_K_M"
+  qwen3-4b-2507:           # fallback if Qwen3.5 misbehaves in the pinned llama.cpp build
+    task: llm
+    backend: llama_server
+    repo: bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF
+    file: "*Q4_K_M.gguf"
+    label: "Qwen3 4B Instruct 2507 · Q4_K_M"
+  qwen35-9b:               # full matrix (demo-full.yaml): workstation (~5.7 GB)
+    task: llm
+    backend: llama_server
+    repo: bartowski/Qwen_Qwen3.5-9B-GGUF
+    file: "*Q4_K_M.gguf"
+    label: "Qwen3.5 9B · Q4_K_M"
+  qwen35-122b-a10b:        # full matrix: DGX only, one H200 (~75 GB, split GGUF; 10B active)
+    task: llm
+    backend: llama_server
+    repo: bartowski/Qwen_Qwen3.5-122B-A10B-GGUF
+    file: "*Q4_K_M*.gguf"
+    label: "Qwen3.5 122B-A10B · Q4_K_M"
+
+  # ---------------- Task 8: sequential 3D scene construction (LLM layout) ----------------
+  # The Task 4 weights and llama-server, with a layout prompt and a GBNF grammar
+  # (backends/layout.py). Same repo + file as qwen35-4b, so no extra download; it is a separate
+  # key because the layout worker is its own process (port 8105) with its own llama-server.
+  qwen35-4b-layout:        # single-model show: every machine
+    task: layout
+    backend: llama_layout
+    repo: bartowski/Qwen_Qwen3.5-4B-GGUF
+    file: "*Q4_K_M.gguf"
+    label: "Qwen3.5 4B · Q4_K_M"
+  qwen35-9b-layout:        # full matrix: workstation
+    task: layout
+    backend: llama_layout
+    repo: bartowski/Qwen_Qwen3.5-9B-GGUF
+    file: "*Q4_K_M.gguf"
+    label: "Qwen3.5 9B · Q4_K_M"
+  qwen35-122b-a10b-layout: # full matrix: DGX only
+    task: layout
+    backend: llama_layout
+    repo: bartowski/Qwen_Qwen3.5-122B-A10B-GGUF
+    file: "*Q4_K_M*.gguf"
+    label: "Qwen3.5 122B-A10B · Q4_K_M"

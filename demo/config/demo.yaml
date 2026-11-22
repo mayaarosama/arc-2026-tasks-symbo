@@ -6,6 +6,8 @@
 #   t2i  sd15             SD 1.5               stable-diffusion-v1-5/stable-diffusion-v1-5
 #   i23d sf3d             Stable Fast 3D       stabilityai/stable-fast-3d
 #   music sa3-small-music Stable Audio 3 Small stabilityai/stable-audio-3-small-music
+#   llm  qwen35-4b        Qwen3.5 4B Q4_K_M    bartowski/Qwen_Qwen3.5-4B-GGUF (llama.cpp)
+#   layout qwen35-4b-layout  the same file, placing furniture (Task 8, backends/layout.py)
 # The machines differ only in how much they finish (batch, steps, tracks in the budget).
 # The larger per-machine models (SD 3.5, TRELLIS, Stable Audio Medium) are in config/demo-full.yaml.
 
@@ -27,6 +29,8 @@ machines:
       t2i: http://dgx.local:8101
       i23d: http://dgx.local:8102
       music: http://dgx.local:8103
+      llm: http://dgx.local:8104
+      layout: http://dgx.local:8105
   - id: workstation
     label: "Workstation"
     hardware: "1 GPU · 16 GB VRAM"
@@ -36,6 +40,8 @@ machines:
       t2i: http://workstation.local:8101
       i23d: http://workstation.local:8102
       music: http://workstation.local:8103
+      llm: http://workstation.local:8104
+      layout: http://workstation.local:8105
   - id: cpu
     label: "CPU only"
     hardware: "No GPU · 16 GB RAM"
@@ -46,11 +52,15 @@ machines:
       t2i: http://cpu.local:8101
       i23d: http://cpu.local:8102
       music: http://cpu.local:8103
+      llm: http://cpu.local:8104
+      layout: http://cpu.local:8105
 
 inputs:
   t2i: data/t2i/stage_prompts.json
   i23d: data/i23d/stage_objects.json
   music: data/music/stage_inputs.json
+  llm: data/llm/stage_prompts.json
+  layout: data/layout/stage_rooms.json
 
 # ------------------------------------------------------------------------------------------
 # Settings matrix. "all" applies to every machine; a machine key overrides it.
@@ -71,6 +81,23 @@ settings:
   music:
     iso_time:      # throughput: complete 30 s tracks finished inside the budget
       all:         {model: sa3-small-music, length_s: 30, steps: 8, repeat_until_budget: true}
+  llm:            # one model everywhere; machines differ in how many replies they serve at once (TBC)
+    iso_quality:   # the stopwatch: one greedy reply, identical on every machine
+      all:         {model: qwen35-4b, streams: 1, max_tokens: 256, temperature: 0}
+    iso_time:      # throughput: concurrent replies, total tokens generated inside the budget
+      all:         {model: qwen35-4b, max_tokens: 512, temperature: 0.7, repeat_until_budget: true}
+      dgx:         {model: qwen35-4b, streams: 64}
+      workstation: {model: qwen35-4b, streams: 8}
+      cpu:         {model: qwen35-4b, streams: 1}
+
+  layout:         # task 8: the Task 4 model placing furniture; one model everywhere (TBC from rehearsal)
+    iso_quality:   # the same room on every machine (greedy), built object by object; compare the time
+      all:         {model: qwen35-4b-layout, streams: 1, max_tokens: 400, temperature: 0}
+    iso_time:      # throughput: rooms furnished at once, repeated until the bell
+      all:         {model: qwen35-4b-layout, max_tokens: 400, temperature: 0.7, repeat_until_budget: true}
+      dgx:         {model: qwen35-4b-layout, streams: 64}
+      workstation: {model: qwen35-4b-layout, streams: 8}
+      cpu:         {model: qwen35-4b-layout, streams: 1}
 
 # ------------------------------------------------------------------------------------------
 # Run of show. The operator page shows these as buttons, in order.
@@ -119,3 +146,31 @@ segments:
     budget_seconds: 60
     inputs: [mus-01, mus-02]       # mus-03 (continuation) waits for its seed clip
     caption: "Same music model on every machine: complete 30-second tracks finished in {budget} seconds. Instrumental only."
+  - id: seg6                       # task 4: language model race
+    title: "Same answer, different time"
+    task: llm
+    protocol: iso_quality
+    budget_seconds: null
+    inputs: [llm-01]
+    caption: "Same model, same prompt, greedy decoding on every machine. Only the clock differs."
+  - id: seg7
+    title: "Tokens in a minute"
+    task: llm
+    protocol: iso_time
+    budget_seconds: 60
+    inputs: [llm-02, llm-03]
+    caption: "Same model on every machine, each serving as many replies at once as it handles well. Total tokens in {budget} seconds."
+  - id: seg8                       # task 8: sequential scene construction (LLM layout)
+    title: "Furnish the room"
+    task: layout
+    protocol: iso_quality
+    budget_seconds: null
+    inputs: [lay-01, lay-02, lay-03]
+    caption: "Same model, same floor plan, greedy decoding: every machine builds the same room, one object at a time. Only the clock differs."
+  - id: seg9
+    title: "Rooms in a minute"
+    task: layout
+    protocol: iso_time
+    budget_seconds: 60
+    inputs: [lay-02]
+    caption: "Same model on every machine, each furnishing as many rooms at once as it handles well. Rooms finished in {budget} seconds."

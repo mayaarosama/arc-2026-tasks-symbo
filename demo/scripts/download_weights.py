@@ -7,6 +7,7 @@
 The model list is derived from config/demo.yaml (every model that machine is configured to run
 for that task, in any protocol) plus the declared fallbacks, so config and downloads cannot drift.
 Gated repos (accept on the model page first): all stabilityai/*, facebook/dinov3-*, briaai/RMBG-2.0.
+GGUF repos hold every quantisation: a model's `file` glob in models.yaml limits the download to one.
 """
 import argparse
 import sys
@@ -73,9 +74,11 @@ def main() -> None:
     else:
         ap.error("give --machine and --task, or --model")
     repos = repos_for(cfg, keys)
+    allow = {cfg.models[k]["repo"]: [cfg.models[k]["file"]] for k in keys if cfg.models[k].get("file")}
     print(f"{what}: {len(repos)} repos")
     for r in repos:
-        print("  ", r, "(ignoring " + ", ".join(IGNORE[r]) + ")" if r in IGNORE else "")
+        print("  ", r, "(ignoring " + ", ".join(IGNORE[r]) + ")" if r in IGNORE else
+              "(only " + ", ".join(allow[r]) + ")" if r in allow else "")
     if a.dry_run:
         return
     from huggingface_hub import snapshot_download
@@ -83,7 +86,7 @@ def main() -> None:
     # testing it, so parallel workers race the test and fail with WinError 1314. One worker avoids it.
     workers = 1 if sys.platform == "win32" else 8
     for r in repos:
-        path = snapshot_download(r, ignore_patterns=IGNORE.get(r), max_workers=workers)
+        path = snapshot_download(r, ignore_patterns=IGNORE.get(r), allow_patterns=allow.get(r), max_workers=workers)
         print("ok", r, "->", path)
 
 

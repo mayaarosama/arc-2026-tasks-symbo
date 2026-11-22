@@ -1,5 +1,6 @@
 # Text-to-image worker env (every machine). Install torch FIRST from the right index:
 #   GPU: pip install torch --index-url https://download.pytorch.org/whl/cu124   then also -r t2i-gpu.txt
+#        RTX 50xx (Blackwell, sm_120): cu124/cu126 wheels can't run on it -> use torch>=2.7 from .../whl/cu128
 #   CPU: pip install torch --index-url https://download.pytorch.org/whl/cpu    (scripts/cpu/ does this)
 -r worker-base.txt
 diffusers>=0.31        # StableDiffusion3Pipeline with callback_on_step_end
