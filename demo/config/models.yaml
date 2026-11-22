@@ -129,7 +129,18 @@ models:
     repo: bartowski/Qwen_Qwen3.5-4B-GGUF
     file: "*Q4_K_M.gguf"
     label: "Qwen3.5 4B · Q4_K_M"
-  qwen35-9b-layout:        # full matrix: workstation
+  qwen38-27b-layout:       # full matrix: workstation (seg9 ladder)
+    # Qwen3.8 27B (Aug 2026, Apache-2.0), same GGUF architecture (qwen35) as Qwen3.5, so the same
+    # llama.cpp build loads it. Q4_K_M is 17.4 GB and does not fit 16 GB; Q3_K_M is 13.4 GB.
+    # slots: 1 keeps the KV cache to one 4,096-token room (the worker's llm_slots is 8);
+    # seg9 in demo-full.yaml runs one room per machine. Not yet measured on the workstation.
+    task: layout
+    backend: llama_layout
+    repo: bartowski/Qwen3.8-27B-GGUF
+    file: "*Q3_K_M.gguf"
+    slots: 1
+    label: "Qwen3.8 27B · Q3_K_M"
+  qwen35-9b-layout:        # previous workstation tier; fallback if the 27B misbehaves
     task: layout
     backend: llama_layout
     repo: bartowski/Qwen_Qwen3.5-9B-GGUF

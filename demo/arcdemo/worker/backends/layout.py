@@ -187,7 +187,7 @@ class LayoutServer(LayoutBackend, LlamaServer):
             except BaseException as e:  # noqa: BLE001 — re-raised below
                 errors.append(e)
 
-        threads = [threading.Thread(target=warm, daemon=True) for _ in range(int(self.cfg.get("llm_slots", 1)))]
+        threads = [threading.Thread(target=warm, daemon=True) for _ in range(self._slots())]
         for t in threads:
             t.start()
         for t in threads:
@@ -197,7 +197,7 @@ class LayoutServer(LayoutBackend, LlamaServer):
 
     def describe(self, req: JobRequest) -> dict:
         return {**LayoutBackend.describe(self, req), "server": getattr(self, "version", "?"),
-                "slots": int(self.cfg.get("llm_slots", 1)), "prompt_warmed": getattr(self, "warmed", False)}
+                "slots": self._slots(), "prompt_warmed": getattr(self, "warmed", False)}
 
     def _room_stream(self, spec: dict, req: JobRequest, seed: int) -> Iterator[tuple[str, int]]:
         yield from self._chat(messages(spec), req.max_tokens, req.temperature, seed, grammar=grammar(spec))

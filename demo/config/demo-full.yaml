@@ -100,7 +100,7 @@ settings:
     iso_time:      # the ladder: one room each, the largest model each machine holds; compare the rooms
       all:         {model: qwen35-4b-layout, streams: 1, max_tokens: 400, temperature: 0}
       dgx:         {model: qwen35-122b-a10b-layout}
-      workstation: {model: qwen35-9b-layout}
+      workstation: {model: qwen38-27b-layout}   # Qwen3.8 27B Q3_K_M; qwen35-9b-layout is the fallback
 
 # ------------------------------------------------------------------------------------------
 # Run of show. The operator page shows these as buttons, in order.

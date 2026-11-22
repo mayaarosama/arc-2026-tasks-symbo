@@ -126,7 +126,7 @@ class LlamaServer(LlmBackend):
         if not files:
             raise FileNotFoundError(f"no file matching {pattern} in {self.repo}")
         gpus = [d.split(":")[1] if ":" in d else "0" for d in self.devices if d.startswith("cuda")]
-        slots, per_slot = int(self.cfg.get("llm_slots", 1)), self._ctx_per_slot()
+        slots, per_slot = self._slots(), self._ctx_per_slot()
         exe = self.cfg.get("llama_server", "llama-server")
         self.port = _free_port()
         args = [exe, "-m", str(files[0]),          # split GGUFs: the server finds parts 2..n itself
@@ -171,6 +171,11 @@ class LlamaServer(LlmBackend):
     def _ctx_per_slot(self) -> int:
         return int(self.cfg.get("llm_ctx", 2048))
 
+    def _slots(self) -> int:
+        """Server slots: the worker's llm_slots, unless the model's models.yaml entry caps it with
+        `slots` (a model that only fits the card with a small KV cache, e.g. Qwen3.8 27B on 16 GB)."""
+        return int(self.spec.get("slots") or self.cfg.get("llm_slots", 1))
+
     def unload(self) -> None:
         proc = getattr(self, "proc", None)
         if proc is not None and proc.poll() is None:
@@ -186,7 +191,7 @@ class LlamaServer(LlmBackend):
 
     def describe(self, req: JobRequest) -> dict:
         return {**super().describe(req), "server": getattr(self, "version", "?"),
-                "slots": int(self.cfg.get("llm_slots", 1))}
+                "slots": self._slots()}
 
     def memory_meter(self) -> "_ServerMemory":
         return _ServerMemory(self)
