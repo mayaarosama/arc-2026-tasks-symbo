@@ -176,20 +176,69 @@ update_repo() {
     echo "already up to date at $(git -C "$REPO" rev-parse --short HEAD)"
 }
 
-need_nvcc() {   # the CUDA compiler, 12.8 or 12.9 (CUDA 13 cannot build for the cu128 torch wheels)
-    local d v
-    for d in "${CUDA_HOME:-}" /usr/local/cuda-12.9 /usr/local/cuda-12.8; do
-        if [ -n "$d" ] && [ -x "$d/bin/nvcc" ]; then export CUDA_HOME="$d" PATH="$d/bin:$PATH"; break; fi
-    done
-    if command -v nvcc >/dev/null; then
-        v="$(nvcc --version | grep -o 'release [0-9]*\.[0-9]*' | cut -d' ' -f2)"
-        case "$v" in 12.8|12.9) export CUDA_HOME="${CUDA_HOME:-$(dirname "$(dirname "$(command -v nvcc)")")}"; echo "nvcc $v at $CUDA_HOME"; return 0 ;; esac
+CUDA_RUNFILE=cuda_12.8.1_570.124.06_linux.run
+CUDA_RUNFILE_URL=https://developer.download.nvidia.com/compute/cuda/12.8.1/local_installers/$CUDA_RUNFILE
+
+# need_nvcc PURPOSE [torch|any]: find a CUDA compiler for one build. It only looks; it installs,
+# changes and deletes nothing.
+#   torch  12.8 or 12.9: SF3D's extensions must match the cu128 torch wheels (CUDA 13 cannot)
+#   any    12.8, 12.9 or 13.x: llama.cpp does not link against torch
+# Sets NVCC and CUDA_DIR, plus HOST_CC/HOST_CXX when nvcc needs an older GCC than the default
+# (CUDA 12.x accepts GCC 14 at most; Ubuntu 26.04 ships a newer one). Empty = default compiler.
+# Nothing is exported: each build passes these to its own subshell or cmake.
+need_nvcc() {
+    local purpose="$1" mode="${2:-torch}" c v found="" cands=()
+    for c in "${CUDA_HOME:-}" /usr/local/cuda-12.9 /usr/local/cuda-12.8; do [ -n "$c" ] && cands+=("$c/bin/nvcc"); done
+    if [ "$mode" = any ]; then
+        cands+=(/usr/local/cuda/bin/nvcc)
+        for c in $(ls -d /usr/local/cuda-13* 2>/dev/null | sort -rV); do cands+=("$c/bin/nvcc"); done
     fi
-    local found="not installed"; [ -n "${v:-}" ] && found="version $v, not 12.8 or 12.9"
-    need_input "The CUDA toolkit 12.8 (nvcc) is needed to build ${1:-this}; here it is $found." \
-        "Install the toolkit only, not the driver (section 1 of the Complete guide):" \
-        "  sudo apt install -y cuda-toolkit-12-8     (from NVIDIA's CUDA apt repository)" \
-        "Then run this script again."
+    command -v nvcc >/dev/null && cands+=("$(command -v nvcc)")
+    NVCC="" CUDA_DIR="" HOST_CC="" HOST_CXX=""
+    for c in "${cands[@]}"; do
+        [ -x "$c" ] || continue
+        v="$("$c" --version 2>/dev/null | grep -o 'release [0-9]*\.[0-9]*' | cut -d' ' -f2)"
+        case "$mode:$v" in
+            *:12.8|*:12.9|any:13.*) NVCC="$c"; break ;;
+            *:?*) case " $found " in *" $v "*) ;; *) found="${found:+$found }$v" ;; esac ;;
+        esac
+    done
+    if [ -z "$NVCC" ]; then
+        local want="12.8 or 12.9"; [ "$mode" = any ] && want="12.8, 12.9 or 13.x"
+        local here="not installed"; [ -n "$found" ] && here="version $found, not $want"
+        if apt-cache policy cuda-toolkit-12-8 2>/dev/null | grep -q 'Candidate: [0-9]'; then
+            need_input "The CUDA toolkit $want (nvcc) is needed to build $purpose; here it is $here." \
+                "Install the toolkit only, not the driver (section 1 of the Complete guide):" \
+                "  sudo apt install -y cuda-toolkit-12-8     (from NVIDIA's CUDA apt repository)" \
+                "Then run this script again."
+        fi
+        need_input "The CUDA toolkit $want (nvcc) is needed to build $purpose; here it is $here." \
+            "NVIDIA's apt repository for this Ubuntu has no cuda-toolkit-12-8, so install 12.8 from NVIDIA's" \
+            "runfile, toolkit only. It goes into /usr/local/cuda-12.8 and leaves the driver, apt and any" \
+            "CUDA 13 alone (section 1 of the Complete guide):" \
+            "  ls -l /usr/local/cuda          # note where it points now, if it exists" \
+            "  wget $CUDA_RUNFILE_URL" \
+            "  sudo sh $CUDA_RUNFILE --silent --toolkit --toolkitpath=/usr/local/cuda-12.8 --no-man-page --override" \
+            "  ls -l /usr/local/cuda          # if it changed and you want the old default: sudo ln -sfn <old target> /usr/local/cuda" \
+            "  sudo apt install -y gcc-14 g++-14   # only if gcc --version is newer than 14; the default gcc stays" \
+            "The downloaded .run file can be deleted afterwards. Then run this script again."
+    fi
+    CUDA_DIR="$(dirname "$(dirname "$NVCC")")"
+    echo "nvcc $v at $CUDA_DIR (for $purpose)"
+    case "$v" in 12.*) ;; *) return 0 ;; esac
+    local g; g="$(gcc -dumpfullversion -dumpversion 2>/dev/null | cut -d. -f1)"
+    [ -n "$g" ] && [ "$g" -le 14 ] && return 0
+    for g in 14 13 12; do
+        if command -v "g++-$g" >/dev/null && command -v "gcc-$g" >/dev/null; then
+            HOST_CC="$(command -v "gcc-$g")" HOST_CXX="$(command -v "g++-$g")"
+            echo "default GCC is newer than CUDA $v accepts; using GCC $g as its host compiler"
+            return 0
+        fi
+    done
+    need_input "CUDA $v accepts GCC 14 at most; the default gcc here is $(gcc -dumpfullversion -dumpversion 2>/dev/null)." \
+        "Install GCC 14 next to it (the default gcc stays the default):" \
+        "  sudo apt install -y gcc-14 g++-14" \
+        "Then run this script again: it uses gcc-14 for the CUDA builds only."
 }
 
 mkvenv() {
@@ -216,8 +265,10 @@ venv_i23d() {
     if .venv-i23d/bin/python -c "import texture_baker, uv_unwrapper" 2>/dev/null; then
         echo "SF3D extensions already built"
     else
-        need_nvcc "SF3D's texture_baker and uv_unwrapper"
-        (export TORCH_CUDA_ARCH_LIST="$CAP" USE_CUDA=1
+        need_nvcc "SF3D's texture_baker and uv_unwrapper" torch
+        (export CUDA_HOME="$CUDA_DIR" PATH="$CUDA_DIR/bin:$PATH" TORCH_CUDA_ARCH_LIST="$CAP" USE_CUDA=1
+         # torch passes $CC to nvcc as -ccbin; NVCC_CCBIN covers any nvcc call without it
+         if [ -n "$HOST_CXX" ]; then export CC="$HOST_CC" CXX="$HOST_CXX" NVCC_CCBIN="$HOST_CXX"; fi
          cd $SF3D_DIR && "$DEMO/.venv-i23d/bin/pip" install --no-build-isolation ./texture_baker ./uv_unwrapper) || return 1
     fi
     .venv-i23d/bin/pip install -r requirements/worker-base.txt &&
@@ -250,12 +301,15 @@ llama_build() {
         echo "llama-server $LLAMA_TAG with CUDA is already installed"; return 0
     fi
     command -v cmake >/dev/null || need_input "cmake not found (needed to build llama.cpp)." "Install: sudo apt install -y cmake"
-    need_nvcc "llama.cpp"
+    need_nvcc "llama.cpp" any
+    local host=(); [ -n "$HOST_CXX" ] && host=(-DCMAKE_CUDA_HOST_COMPILER="$HOST_CXX")
     [ -d $LLAMA_SRC/.git ] || git clone --depth 1 --branch $LLAMA_TAG https://github.com/ggml-org/llama.cpp $LLAMA_SRC || return 1
     if [ "$(git -C $LLAMA_SRC describe --tags 2>/dev/null)" != $LLAMA_TAG ]; then
         echo "$LLAMA_SRC is not release $LLAMA_TAG: delete it (rm -rf $DEMO/$LLAMA_SRC) and run again"; return 1
     fi
+    CUDA_HOME="$CUDA_DIR" PATH="$CUDA_DIR/bin:$PATH" \
     cmake -S $LLAMA_SRC -B $LLAMA_SRC/build -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES="$CUDA_ARCH" \
+        -DCMAKE_CUDA_COMPILER="$NVCC" "${host[@]}" \
         -DBUILD_SHARED_LIBS=OFF -DLLAMA_CURL=OFF -DCMAKE_BUILD_TYPE=Release &&
     cmake --build $LLAMA_SRC/build --target llama-server -j"$(nproc)" &&
     mkdir -p "$(dirname $LLAMA_BIN)" && cp $LLAMA_SRC/build/bin/llama-server $LLAMA_BIN &&

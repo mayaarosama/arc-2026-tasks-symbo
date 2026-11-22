@@ -64,6 +64,19 @@ echo 'export PATH=$CUDA_HOME/bin:$PATH' >> ~/.bashrc
 source ~/.bashrc && nvcc --version                 # release 12.8
 ```
 
+**Ubuntu 26.04 and newer.** NVIDIA's apt repository for these releases has only CUDA 13, so `cuda-toolkit-12-8` is not there. Install 12.8 with NVIDIA's runfile, toolkit only. It copies files into `/usr/local/cuda-12.8` and does not touch the driver, apt or any CUDA 13 already installed. Apt does not track it, so remove it later with `sudo /usr/local/cuda-12.8/bin/cuda-uninstaller`. CUDA 12.8 accepts GCC 14 at most, so install GCC 14 next to the newer default compiler. `setup_gpu_machine.sh` uses it for the CUDA builds only, and plain `gcc` stays the default. The script also accepts CUDA 13 for llama.cpp, which does not link against torch. Only SF3D needs 12.x.
+
+```bash
+ls -l /usr/local/cuda                              # note where it points now, if it exists
+wget https://developer.download.nvidia.com/compute/cuda/12.8.1/local_installers/cuda_12.8.1_570.124.06_linux.run
+sudo sh cuda_12.8.1_570.124.06_linux.run --silent --toolkit --toolkitpath=/usr/local/cuda-12.8 --no-man-page --override
+/usr/local/cuda-12.8/bin/nvcc --version            # release 12.8
+ls -l /usr/local/cuda                              # if it changed: sudo ln -sfn <old target> /usr/local/cuda
+sudo apt install -y gcc-14 g++-14                  # only if gcc --version is newer than 14
+```
+
+Do not add `CUDA_HOME=/usr/local/cuda-12.8` to `~/.bashrc` on these releases. The script finds `/usr/local/cuda-12.8` on its own, and your shell keeps CUDA 13 as its default. Once the install works, you can delete the downloaded `.run` file.
+
 **Hugging Face access.** Log in to the account whose token you will use. Accept the licence on each gated page:
 
 - [stabilityai/stable-fast-3d](https://huggingface.co/stabilityai/stable-fast-3d)
@@ -421,7 +434,8 @@ Worker logs are `results/worker-<task>.log`. A crash before logging starts lands
 | --- | --- | --- |
 | `no kernel image is available for execution on the device`, or a `sm_120 is not compatible` warning | a torch wheel built before CUDA 12.8 | `pip install --force-reinstall torch==2.7.1 ... --index-url https://download.pytorch.org/whl/cu128` in that venv |
 | `torch.cuda.is_available()` is `False` | CPU torch from PyPI got in | the same reinstall from `cu128` |
-| SF3D build: `CUDA_HOME` not set, or `nvcc` version mismatch | toolkit missing, or CUDA 13 `nvcc` on the path | install `cuda-toolkit-12-8`, export `CUDA_HOME=/usr/local/cuda-12.8`, rebuild both extensions |
+| SF3D build: `CUDA_HOME` not set, or `nvcc` version mismatch | toolkit missing, or CUDA 13 `nvcc` on the path | install `cuda-toolkit-12-8` (on Ubuntu 26.04+, the runfile in section 1), export `CUDA_HOME=/usr/local/cuda-12.8`, rebuild both extensions |
+| SF3D or llama.cpp build: `unsupported GNU version! gcc versions later than 14 are not supported` | CUDA 12.8 with the newer default GCC of Ubuntu 26.04+ | `sudo apt install -y gcc-14 g++-14`, then rerun `setup_gpu_machine.sh`: it picks GCC 14 for the CUDA builds |
 | `ImportError` from `transformers` in `.venv-i23d` | `huggingface_hub` 1.x pulled in by worker-base | `pip install "huggingface_hub>=0.25,<1.0"` |
 | llama.cpp build fails at `ggml-cuda` | `nvcc` older than 12.8 has no sm_120 | check `nvcc --version`, then rerun the cmake configure |
 | `llama-server --list-devices` shows no CUDA0 | built without `-DGGML_CUDA=ON` | delete `third_party/llama.cpp-src/build` and rebuild |
