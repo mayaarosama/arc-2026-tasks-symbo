@@ -101,6 +101,25 @@ Single-model show: the envs below are all a GPU machine needs (CUDA GPU, Linux o
 Step-by-step for the RTX 5060 Ti workstation (Blackwell: `cu128` torch, llama.cpp built from source):
 [`docs/GPU workstation setup.md`](docs/GPU%20workstation%20setup.md).
 
+**Linux GPU machines: one command.** After cloning and writing `../config.txt` (see Secrets), this runs
+every step below, then starts the five workers:
+
+```bash
+bash scripts/gpu/setup_gpu_machine.sh --machine workstation    # or --machine dgx
+#   --show-only  only config/demo.yaml models    --no-start  set up and check only
+#   --conductor  also start the conductor here   --no-pull   skip git pull
+```
+
+It sets up the venvs and llama.cpp. Before each download it checks free disk and GPU memory
+(`scripts/gpu/plan_downloads.py`) and skips any model that doesn't fit. It then runs the offline
+check for the show and the full matrix, and starts the workers. Every step reuses what is already
+there, so re-running is safe. It stops early only for fixes that need you: sudo packages, the CUDA
+12.8 toolkit, the secrets file, or a `git pull` conflict. Any other failure is recorded, the steps
+that depend on it are skipped, and the run goes on. The report, `results/setup-report-latest.md`,
+lists what needs your action and every step, model, offline check and worker that could not run.
+
+The manual steps, for Windows or for running one step at a time:
+
 ```bash
 export HF_TOKEN=<from config.txt>                       # account must have accepted every gated licence
 python scripts/download_weights.py --machine <dgx|workstation> --task t2i     # SD 1.5
@@ -241,5 +260,6 @@ logs when it dispatches, so one grep follows a cell end to end.
 | `config/` | `demo.yaml` (single-model show), `demo-full.yaml` (largest model per machine), `models.yaml`, one worker config per machine |
 | `data/` | stage prompts, rehearsal prompts (PartiPrompts), GSO inputs + ground truth, music inputs, LLM prompts |
 | `scripts/` | download, verify offline, prepare GSO, rehearse, mock dry-run |
+| `scripts/gpu/` | GPU machines (Linux): `setup_gpu_machine.sh --machine workstation\|dgx` (every setup step, then the workers; report in `results/`), `plan_downloads.py` (disk + GPU-memory check, then download) |
 | `scripts/cpu/` | CPU box: `cpu_box_linux.sh`, `cpu_box_windows.ps1` (setup / start / status / stop; workers :8101–8103), `check_cpu.py` |
 | `third_party/` | `stable-fast-3d`, `stable-audio-3` (git clones; not pip packages) |

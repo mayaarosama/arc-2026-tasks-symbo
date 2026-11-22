@@ -1,6 +1,6 @@
 # ARC 2026 Demo — GPU Workstation Setup (RTX 5060 Ti)
 
-As of 2026-11-22.
+As of 2026-11-22. Mirrors the "Complete guide" tab of the shared setup doc.
 
 ## Overview
 
@@ -25,9 +25,18 @@ The five workers and the model each one serves:
 
 **Blackwell matters.** The RTX 5060 Ti only runs PyTorch builds compiled for CUDA 12.8 or newer (the `cu128` wheels). Older wheels fail with `no kernel image is available for execution on the device`. Every torch install below uses the `cu128` index. The CUDA 13.2 driver runs them.
 
+**Automated run.** Once the repo is cloned and `config.txt` written (section 2), one script runs sections 3 to 7:
+
+```bash
+cd $DEMO
+bash scripts/gpu/setup_gpu_machine.sh --machine workstation      # or: --machine dgx
+```
+
+It checks free disk and GPU memory before each model download, and skips a model that doesn't fit. It stops early only for something you must fix yourself: system packages or the CUDA toolkit (these need sudo), a missing `config.txt`, or a `git pull` that conflicts. Any other failure is recorded, the steps that depend on it are skipped, and the run goes on. The report is `results/setup-report-latest.md`: what needs your action, then every step, model, offline check and worker that could not run. Options: `--show-only` (show models only), `--no-start` (don't start the workers), `--conductor` (also start the conductor here). Running it again is safe.
+
 ## 1. Prerequisites
 
-You need about 80 GB of free disk: 17 GB of weights, about 6 GB for each of the three torch envs, and the CUDA toolkit. Do every step below with network access. The show itself runs offline.
+You need about 80 GB of free disk: 17 GB of weights, about 6 GB for each of the three torch envs, and the CUDA toolkit. The full model matrix adds about 85 GB of weights (section 5), so plan on 165 GB if you fetch it too. Do every step below with network access. The show itself runs offline.
 
 **System packages.**
 
@@ -59,6 +68,7 @@ source ~/.bashrc && nvcc --version                 # release 12.8
 
 - [stabilityai/stable-fast-3d](https://huggingface.co/stabilityai/stable-fast-3d)
 - [stabilityai/stable-audio-3-small-music](https://huggingface.co/stabilityai/stable-audio-3-small-music)
+- Full model matrix only: [stabilityai/stable-diffusion-3.5-medium](https://huggingface.co/stabilityai/stable-diffusion-3.5-medium), [stabilityai/stable-audio-3-medium](https://huggingface.co/stabilityai/stable-audio-3-medium), [facebook/dinov3-vitl16-pretrain-lvd1689m](https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m), [briaai/RMBG-2.0](https://huggingface.co/briaai/RMBG-2.0)
 
 Create a read token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
 
@@ -75,6 +85,25 @@ cd ~/arc2026/demo
 export DEMO=~/arc2026/demo PY=python3.11
 ```
 
+**Already cloned?** Skip the clone. Check for updates, pull them, then set the variables again:
+
+```bash
+cd ~/arc2026
+git fetch && git status -sb      # "behind N" in the first line means the remote has new commits
+git pull --ff-only
+cd ~/arc2026/demo
+export DEMO=~/arc2026/demo PY=python3.11
+```
+
+If the pull stops with "Your local changes to the following files would be overwritten" (for example `demo/config/demo.yaml` after pointing the workstation URLs at `127.0.0.1`), stash your change, pull, then apply it again. Do not run `git stash pop`: it conflicts on the same lines.
+
+```bash
+cd ~/arc2026
+git stash
+git pull --ff-only
+sed -i 's#http://workstation.local:#http://127.0.0.1:#' demo/config/demo.yaml   # only if the conductor runs on this machine
+```
+
 Write the secrets file **next to** `demo/`, never inside it. It is git-ignored, and scripts never print its values.
 
 ```bash
@@ -87,6 +116,13 @@ chmod 600 ~/arc2026/config.txt
 
 Two git-ignored folders hold everything heavy: `third_party/` (cloned libraries and llama.cpp) and `hf-cache/hub` (all model weights, set by `arcdemo/__init__.py`). Neither comes with the clone.
 
+**dgx variant (from the INSTRUCTION tab).** That tab works from `~/arc-2026-tasks-symbo/demo` and sets a `MACHINE` variable, so its commands read `config/worker-$MACHINE.yaml`:
+
+```bash
+cd ~/arc-2026-tasks-symbo/demo
+MACHINE=dgx            # or: workstation
+```
+
 ## 3. Python environments
 
 Each task gets its own venv in `demo/`, because their libraries pin different versions. Torch goes in **first**, from the `cu128` index, so no later step pulls a wheel without Blackwell kernels. All three torch envs use torch 2.7.1, the version Stable Audio 3 pins.
@@ -94,8 +130,19 @@ Each task gets its own venv in `demo/`, because their libraries pin different ve
 ```bash
 cd $DEMO
 CU=https://download.pytorch.org/whl/cu128
-mkvenv() { $PY -m venv "$1" && "$1/bin/pip" install -q --upgrade pip; }
+# Create a venv only if it is not there yet
+mkvenv() {
+  if [ -x "$1/bin/python" ]; then echo "$1 already exists, reusing it"; return 0; fi
+  $PY -m venv "$1" && "$1/bin/pip" install -q --upgrade pip
+}
+# Clone a repo only if it is not there yet, then pin the commit
+clone() {   # url dir commit
+  [ -d "$2/.git" ] || git clone "$1" "$2"
+  git -C "$2" checkout -q "$3"
+}
 ```
+
+**Safe to re-run.** An existing venv or clone is reused, not recreated. The `pip install` lines then only add what is missing: pip skips anything already at the pinned version. To rebuild a venv from scratch, delete its folder first (`rm -rf .venv-t2i`).
 
 **Text-to-image (`.venv-t2i`).**
 
@@ -110,13 +157,14 @@ mkvenv .venv-t2i
 ```bash
 mkvenv .venv-i23d
 .venv-i23d/bin/pip install torch==2.7.1 torchvision==0.22.1 --index-url $CU
-git clone https://github.com/Stability-AI/stable-fast-3d third_party/stable-fast-3d
-git -C third_party/stable-fast-3d checkout ff21fc4          # the commit the laptop runs
+clone https://github.com/Stability-AI/stable-fast-3d third_party/stable-fast-3d ff21fc4   # the commit the laptop runs
 .venv-i23d/bin/pip install -U setuptools==69.5.1 wheel
 grep -v '^\./' third_party/stable-fast-3d/requirements.txt > /tmp/sf3d-req.txt
 .venv-i23d/bin/pip install -r /tmp/sf3d-req.txt
 export TORCH_CUDA_ARCH_LIST=12.0 USE_CUDA=1
-(cd third_party/stable-fast-3d && $DEMO/.venv-i23d/bin/pip install --no-build-isolation ./texture_baker ./uv_unwrapper)
+# Build the two extensions only if they are not installed yet (the build takes minutes)
+.venv-i23d/bin/python -c "import texture_baker, uv_unwrapper" 2>/dev/null && echo "SF3D extensions already built" || \
+  (cd third_party/stable-fast-3d && $DEMO/.venv-i23d/bin/pip install --no-build-isolation ./texture_baker ./uv_unwrapper)
 .venv-i23d/bin/pip install -r requirements/worker-base.txt
 .venv-i23d/bin/pip install "huggingface_hub>=0.25,<1.0"   # SF3D's transformers 4.42.3 needs hub < 1.0
 ```
@@ -126,8 +174,7 @@ export TORCH_CUDA_ARCH_LIST=12.0 USE_CUDA=1
 ```bash
 mkvenv .venv-music
 .venv-music/bin/pip install torch==2.7.1 torchaudio==2.7.1 --index-url $CU
-git clone https://github.com/Stability-AI/stable-audio-3 third_party/stable-audio-3
-git -C third_party/stable-audio-3 checkout 790793b
+clone https://github.com/Stability-AI/stable-audio-3 third_party/stable-audio-3 790793b
 .venv-music/bin/pip install -r requirements/music.txt
 .venv-music/bin/pip install --no-deps -e third_party/stable-audio-3
 ```
@@ -154,15 +201,26 @@ The `llm` and `layout` workers each start their own `llama-server`. The worker c
 
 ```bash
 cd $DEMO
-git clone --depth 1 --branch b12608 https://github.com/ggml-org/llama.cpp third_party/llama.cpp-src
-cmake -S third_party/llama.cpp-src -B third_party/llama.cpp-src/build \
-  -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=120 -DBUILD_SHARED_LIBS=OFF -DLLAMA_CURL=OFF -DCMAKE_BUILD_TYPE=Release
-cmake --build third_party/llama.cpp-src/build --target llama-server -j"$(nproc)"
-mkdir -p third_party/llama.cpp/bin
-cp third_party/llama.cpp-src/build/bin/llama-server third_party/llama.cpp/bin/
+LS=third_party/llama.cpp/bin/llama-server
+SRC=third_party/llama.cpp-src
+if $LS --version 2>&1 | grep -q 12608 && $LS --list-devices 2>&1 | grep -q CUDA0; then
+  echo "llama-server b12608 with CUDA is already installed, skipping the build"
+else
+  # Clone only if the source is not there yet; stop if it is a different release
+  [ -d $SRC/.git ] || git clone --depth 1 --branch b12608 https://github.com/ggml-org/llama.cpp $SRC
+  if [ "$(git -C $SRC describe --tags 2>/dev/null)" != b12608 ]; then
+    echo "$SRC is not release b12608: delete it (rm -rf $SRC) and run this block again"
+  else
+    cmake -S $SRC -B $SRC/build \
+      -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=120 -DBUILD_SHARED_LIBS=OFF -DLLAMA_CURL=OFF -DCMAKE_BUILD_TYPE=Release
+    cmake --build $SRC/build --target llama-server -j"$(nproc)"
+    mkdir -p third_party/llama.cpp/bin
+    cp $SRC/build/bin/llama-server third_party/llama.cpp/bin/
+  fi
+fi
 ```
 
-The build takes 10 to 20 minutes. Then check it:
+The build takes 10 to 20 minutes. **Safe to re-run:** if `llama-server` is already installed at b12608 and sees the GPU, the whole build is skipped. If the source is already cloned, the clone is skipped, and cmake only recompiles what changed. Then check it:
 
 ```bash
 third_party/llama.cpp/bin/llama-server --version        # version: ... (build 12608, ...)
@@ -173,19 +231,26 @@ No extra flags are needed. Any `cuda:` device in the worker config makes the wor
 
 ## 5. Download the model weights
 
-`scripts/download_weights.py` reads `config/demo.yaml` and fetches every model the workstation runs for a task, plus that model's encoders. Weights land in `demo/hf-cache/hub`. Run it with the token loaded from `config.txt`. Any worker env can run it; `.venv-llm` is the lightest.
+`scripts/download_weights.py` reads a config and fetches every model the workstation runs for a task in it, plus that model's encoders. The commands below run it for every task in two configs: `config/demo.yaml` (the show) and `config/demo-full.yaml` (the full model matrix: the larger models that could not be downloaded on the laptop). Weights land in `demo/hf-cache/hub`. Run it with the token loaded from `config.txt`. Any worker env can run it; `.venv-llm` is the lightest.
 
 ```bash
 cd $DEMO
 set -a; . ../config.txt; set +a                        # loads HF_TOKEN and ARC_DEMO_TOKEN
-for t in t2i i23d music llm layout; do
-  .venv-llm/bin/python scripts/download_weights.py --machine workstation --task $t --dry-run
-done                                                   # lists the repos first
-for t in t2i i23d music llm layout; do
-  .venv-llm/bin/python scripts/download_weights.py --machine workstation --task $t
-done
+CONFIGS="config/demo.yaml config/demo-full.yaml"       # the show, then the full model matrix
+TASKS="t2i i23d music llm layout"
+for c in $CONFIGS; do for t in $TASKS; do
+  .venv-llm/bin/python scripts/download_weights.py --config $c --machine workstation --task $t --dry-run
+done; done                                             # lists the repos first
+for c in $CONFIGS; do for t in $TASKS; do
+  .venv-llm/bin/python scripts/download_weights.py --config $c --machine workstation --task $t \
+    || echo "!! $c / $t: see the FAILED lines above"
+done; done
 unset HF_TOKEN
 ```
+
+**Safe to re-run.** Files already in `hf-cache/hub` are skipped, and an interrupted download resumes where it stopped. If the Hub can't be reached, a repo already on disk prints `cached` instead of failing. Only a repo that is neither on disk nor downloadable prints `FAILED`; the loop then goes on to the next task. To fetch only the show models, set `CONFIGS=config/demo.yaml`.
+
+**The show (`config/demo.yaml`), about 17 GB:**
 
 | Task | Repos fetched | Size |
 | --- | --- | --- |
@@ -195,9 +260,35 @@ unset HF_TOKEN
 | llm | `bartowski/Qwen_Qwen3.5-4B-GGUF`, the `Q4_K_M` file only | 2.7 GB |
 | layout | the llm file again, already on disk | 0 |
 
-A `401` or `403` on a `stabilityai/*` repo means the token's account has not accepted that model's licence (section 1).
+**Full model matrix (`config/demo-full.yaml`), about 85 GB more:**
+
+| Task | Repos fetched | Size |
+| --- | --- | --- |
+| t2i | `stabilityai/stable-diffusion-3.5-medium` (SD 3.5 Medium, without T5 and with T5 int8) | 27.4 GB |
+| i23d | `microsoft/TRELLIS-image-large`, `microsoft/TRELLIS.2-4B`, `facebook/dinov3-vitl16-pretrain-lvd1689m`, `briaai/RMBG-2.0` | 26.1 GB |
+| music | `stabilityai/stable-audio-3-medium` | 10.4 GB |
+| llm | `bartowski/Qwen_Qwen3.5-9B-GGUF`, the `Q4_K_M` file only (the 4B file is listed again, already on disk) | 6.2 GB |
+| layout | `bartowski/Qwen3.8-27B-GGUF`, the `Q3_K_M` file only (Qwen3.8 27B; Q4_K_M is 17.4 GB and does not fit 16 GB) | 13.4 GB |
+
+Downloading these does not change the show: the full matrix runs only when the conductor starts with `--config config/demo-full.yaml`. TRELLIS and TRELLIS.2 also need their own venv, which section 3 does not set up.
+
+A `401` or `403` on a `stabilityai/*` repo (or on facebook/dinov3-* or briaai/RMBG-2.0) means the token's account has not accepted that model's licence (section 1).
 
 **Faster alternative:** if the operator laptop already has `hf-cache/`, copy it over the LAN instead: `rsync -a <laptop>:<path>/demo/hf-cache/ $DEMO/hf-cache/`. Still run the offline check in section 6.
+
+**dgx variant (from the INSTRUCTION tab).** That tab runs each task with its own venv's Python, reads the config with `$MACHINE`, and loads the tokens with carriage returns stripped (`tr -d '\r'`). The loop below covers all five tasks in both configs: about 18 GB for the show and about 177 GB more for the full matrix (SD 3.5 Large and Medium, TRELLIS.2, Stable Audio 3 Medium, and the 77.6 GB Qwen3.5 122B-A10B file). Weights land in `demo/hf-cache/hub`, and the same re-run rules apply.
+
+```bash
+set -a; source <(tr -d '\r' < ../config.txt); set +a
+
+for c in config/demo.yaml config/demo-full.yaml; do
+  .venv-t2i/bin/python   scripts/download_weights.py --config $c --machine $MACHINE --task t2i
+  .venv-i23d/bin/python  scripts/download_weights.py --config $c --machine $MACHINE --task i23d
+  .venv-music/bin/python scripts/download_weights.py --config $c --machine $MACHINE --task music
+  .venv-t2i/bin/python   scripts/download_weights.py --config $c --machine $MACHINE --task llm     # any env works
+  .venv-t2i/bin/python   scripts/download_weights.py --config $c --machine $MACHINE --task layout
+done
+```
 
 ## 6. Worker config and offline check
 
@@ -225,6 +316,18 @@ PYTHONPATH=third_party/stable-fast-3d .venv-i23d/bin/python scripts/verify_offli
 ```
 
 Open the firewall for the conductor, if `ufw` is on: `sudo ufw allow 8101:8105/tcp`. Then confirm the operator laptop resolves `workstation.local`, the name `config/demo.yaml` uses. If not, install `avahi-daemon` or put the IP into `demo.yaml` on the laptop.
+
+**dgx variant (from the INSTRUCTION tab).** That tab checks only t2i, i23d and music, against `config/worker-$MACHINE.yaml`. A `FAIL` here would also fail on stage, so fix it before going on.
+
+```bash
+unset HF_TOKEN
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+
+.venv-t2i/bin/python scripts/verify_offline.py --config config/worker-$MACHINE.yaml --task t2i
+PYTHONPATH=third_party/stable-fast-3d \
+.venv-i23d/bin/python scripts/verify_offline.py --config config/worker-$MACHINE.yaml --task i23d
+.venv-music/bin/python scripts/verify_offline.py --config config/worker-$MACHINE.yaml --task music
+```
 
 ## 7. Run the complete demo
 
@@ -276,6 +379,39 @@ Open `http://<laptop>:8000/operator`. Its *Workers* panel should show the workst
 | Furnish the room / Rooms in a minute | seg8, seg9 | layout | Qwen3.5 4B, 1 then 8 rooms |
 
 Before doors: pick Part 1, load the model, and press **Start** once as the warm-up. Then rehearse the GPU cells so the replay table has records: `python scripts/rehearse.py --segments seg0,seg2,seg3,seg6,seg8 --repeat 3` on the laptop.
+
+**dgx variant (from the INSTRUCTION tab).** That tab starts only three GPU workers (t2i 8101, i23d 8102, music 8103), against `config/worker-$MACHINE.yaml`, and also unsets `SF3D_USE_CPU`. Models keep loading in the background, so ask `/health` again after a minute and `loaded` should list them. If a port doesn't answer, look in `results/stdout-<task>.log`. To stop all three: `pkill -f arcdemo.worker`.
+
+```bash
+set -a; source <(tr -d '\r' < ../config.txt); set +a
+unset HF_TOKEN SF3D_USE_CPU
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+mkdir -p results
+
+nohup .venv-t2i/bin/python -m arcdemo.worker --config config/worker-$MACHINE.yaml --task t2i --port 8101 \
+      > results/stdout-t2i.log 2>&1 &
+PYTHONPATH=third_party/stable-fast-3d \
+nohup .venv-i23d/bin/python -m arcdemo.worker --config config/worker-$MACHINE.yaml --task i23d --port 8102 \
+      > results/stdout-i23d.log 2>&1 &
+nohup .venv-music/bin/python -m arcdemo.worker --config config/worker-$MACHINE.yaml --task music --port 8103 \
+      > results/stdout-music.log 2>&1 &
+
+for p in 8101 8102 8103; do curl -s -H "X-Demo-Token: $ARC_DEMO_TOKEN" http://127.0.0.1:$p/health; echo; done
+```
+
+**Conductor on the GPU machine (from the INSTRUCTION tab).** If the conductor runs on this same GPU machine, first point its URLs at localhost (use `workstation.local` in the `sed` on the workstation), then start it:
+
+```bash
+sed -i 's#http://dgx.local:#http://127.0.0.1:#' config/demo.yaml     # workstation: use workstation.local
+
+set -a; source <(tr -d '\r' < ../config.txt); set +a; unset HF_TOKEN
+.venv/bin/python -m arcdemo.conductor --config config/demo.yaml --host 0.0.0.0 --port 8000
+```
+
+Then open the pages in a browser:
+
+- **Operator controls:** `http://<gpu-machine-ip>:8000/operator`
+- **Projector:** `http://<gpu-machine-ip>:8000/stage`
 
 ## 8. Troubleshooting
 
