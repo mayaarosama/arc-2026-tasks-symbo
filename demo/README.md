@@ -97,7 +97,9 @@ and logs everything to `results/setup-<time>.log`.
 
 ## 1b. GPU machines (once)
 
-Single-model show: the three envs below are all a GPU machine needs (CUDA GPU, Linux or Windows; ≥ 6 GB for SF3D).
+Single-model show: the envs below are all a GPU machine needs (CUDA GPU, Linux or Windows; ≥ 6 GB for SF3D).
+Step-by-step for the RTX 5060 Ti workstation (Blackwell: `cu128` torch, llama.cpp built from source):
+[`docs/GPU workstation setup.md`](docs/GPU%20workstation%20setup.md).
 
 ```bash
 export HF_TOKEN=<from config.txt>                       # account must have accepted every gated licence
