@@ -85,9 +85,23 @@ def main() -> None:
     # Windows without symlink rights: huggingface_hub marks a new repo folder "symlinks OK" before
     # testing it, so parallel workers race the test and fail with WinError 1314. One worker avoids it.
     workers = 1 if sys.platform == "win32" else 8
+    # Safe to re-run: files already in the cache are skipped and partial ones resume. If the Hub
+    # cannot be reached (no network, gated licence revoked) a repo already on disk is kept as is.
+    failed = []
     for r in repos:
-        path = snapshot_download(r, ignore_patterns=IGNORE.get(r), allow_patterns=allow.get(r), max_workers=workers)
-        print("ok", r, "->", path)
+        kw = dict(ignore_patterns=IGNORE.get(r), allow_patterns=allow.get(r))
+        try:
+            path = snapshot_download(r, max_workers=workers, **kw)
+            print("ok", r, "->", path)
+        except Exception as e:   # noqa: BLE001 - any Hub error: try the local cache before giving up
+            try:
+                path = snapshot_download(r, local_files_only=True, **kw)
+                print("cached", r, "->", path, f"(Hub check failed: {type(e).__name__})")
+            except Exception:    # noqa: BLE001
+                print("FAILED", r, "-", type(e).__name__, str(e).splitlines()[0] if str(e) else "")
+                failed.append(r)
+    if failed:
+        sys.exit(f"{len(failed)} repo(s) not downloaded: {', '.join(failed)}")
 
 
 if __name__ == "__main__":
