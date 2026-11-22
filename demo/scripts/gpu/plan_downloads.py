@@ -32,6 +32,7 @@ from arcdemo.conductor.config import DemoConfig  # noqa: E402
 # GPU memory a model needs, GB. Task 2 spec figures (third-party, unverified): measure and update.
 VRAM_GB = {"trellis2-4b": 24, "trellis-image-large": 16, "sf3d": 6}
 GGUF_OVERHEAD_GB = 1.5                        # llama.cpp compute buffers + a small KV cache
+VRAM_SLACK_GB = 0.5                           # nvidia-smi's GiB vs the nominal GB of the figures
 GB = 1e9
 
 
@@ -160,9 +161,10 @@ def main() -> int:
                     except Exception:  # noqa: BLE001 - size unknown: not checked
                         pass
                 m["vram_need_gb"] = round(need_vram, 1) if need_vram else None
-                if need_vram and need_vram > a.vram_gb and not deliberate:
+                # a "16 GB" card reports 15.9 (GiB): the needs above are nominal sizes, so allow the gap
+                if need_vram and need_vram > a.vram_gb + VRAM_SLACK_GB and not deliberate:
                     m.update(status="skipped_vram",
-                             detail=f"needs about {need_vram:.0f} GB of GPU memory, this GPU has {a.vram_gb:.0f} GB")
+                             detail=f"needs about {need_vram:.1f} GB of GPU memory, this GPU has {a.vram_gb:.1f} GB")
                     print(f"  skipped_vram   {key}  {m['detail']}")
                     continue
                 # 2. disk: everything this model still needs must fit, or none of it is downloaded

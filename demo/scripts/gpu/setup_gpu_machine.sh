@@ -59,6 +59,9 @@ case "$MACHINE" in workstation|dgx) ;; *) echo "give --machine workstation or --
 WORKER_CONFIG="config/worker-$MACHINE.yaml"
 
 cd "$DEMO" || exit 2
+# A shell that started workers by hand (README) still has offline mode on, and the downloads need
+# the network. The offline check and the workers turn it on again for themselves.
+unset HF_HUB_OFFLINE TRANSFORMERS_OFFLINE HF_DATASETS_OFFLINE
 if [ -z "$RUN" ]; then RUN="results/setup-$(date +%Y%m%d-%H%M%S)"; fi
 mkdir -p "$RUN"
 STEPS="$RUN/steps.tsv" REPORT="$RUN/report.md"
@@ -225,20 +228,58 @@ need_nvcc() {
     fi
     CUDA_DIR="$(dirname "$(dirname "$NVCC")")"
     echo "nvcc $v at $CUDA_DIR (for $purpose)"
+    NVCC_FIX=""
     case "$v" in 12.*) ;; *) return 0 ;; esac
     local g; g="$(gcc -dumpfullversion -dumpversion 2>/dev/null | cut -d. -f1)"
-    [ -n "$g" ] && [ "$g" -le 14 ] && return 0
-    for g in 14 13 12; do
-        if command -v "g++-$g" >/dev/null && command -v "gcc-$g" >/dev/null; then
-            HOST_CC="$(command -v "gcc-$g")" HOST_CXX="$(command -v "g++-$g")"
-            echo "default GCC is newer than CUDA $v accepts; using GCC $g as its host compiler"
-            return 0
-        fi
-    done
-    need_input "CUDA $v accepts GCC 14 at most; the default gcc here is $(gcc -dumpfullversion -dumpversion 2>/dev/null)." \
-        "Install GCC 14 next to it (the default gcc stays the default):" \
-        "  sudo apt install -y gcc-14 g++-14" \
-        "Then run this script again: it uses gcc-14 for the CUDA builds only."
+    if ! { [ -n "$g" ] && [ "$g" -le 14 ]; }; then
+        for g in 14 13 12; do
+            if command -v "g++-$g" >/dev/null && command -v "gcc-$g" >/dev/null; then
+                HOST_CC="$(command -v "gcc-$g")" HOST_CXX="$(command -v "g++-$g")"
+                echo "default GCC is newer than CUDA $v accepts; using GCC $g as its host compiler"
+                break
+            fi
+        done
+        [ -n "$HOST_CXX" ] || need_input "CUDA $v accepts GCC 14 at most; the default gcc here is $(gcc -dumpfullversion -dumpversion 2>/dev/null)." \
+            "Install GCC 14 next to it (the default gcc stays the default):" \
+            "  sudo apt install -y gcc-14 g++-14" \
+            "Then run this script again: it uses gcc-14 for the CUDA builds only."
+    fi
+    cuda_glibc_fix "$v"
+}
+
+# cuda_glibc_fix VERSION: CUDA 12.8 declares sinpi, cospi and rsqrt (and their f versions) without
+# noexcept; glibc 2.41 and later (Ubuntu 25.04+) declares them noexcept, and nvcc stops on every .cu
+# file ("exception specification is incompatible with that of previous function"). The toolkit is
+# not touched: a copy of its include dir with those six lines fixed goes into third_party/, and the
+# builds put it first on nvcc's search path through NVCC_PREPEND_FLAGS (set in NVCC_FIX).
+# A test compile decides whether the fix is needed and checks that it works.
+cuda_glibc_fix() {
+    local v="$1" t="$RUN/nvcc-probe" ccbin=() inc="$DEMO/third_party/cuda-$1-include-glibc" n
+    mkdir -p "$t"
+    printf '#include <cmath>\n__global__ void k(float *x) { x[0] = rsqrtf(x[0]) + sinpif(x[0]); }\n' > "$t/probe.cu"
+    [ -n "$HOST_CXX" ] && ccbin=(-ccbin "$HOST_CXX")
+    if "$NVCC" "${ccbin[@]}" -c "$t/probe.cu" -o "$t/probe.o" > "$t/plain.log" 2>&1; then return 0; fi
+    if ! grep -q 'exception specification is incompatible' "$t/plain.log"; then
+        echo "nvcc $v cannot compile a minimal .cu file:"; cat "$t/plain.log"; return 1
+    fi
+    echo "CUDA $v clashes with this glibc ($(ldd --version 2>/dev/null | head -n1 | grep -o '[0-9.]*$')): using a fixed copy of its headers"
+    if [ ! -f "$inc/.fixed" ]; then
+        rm -rf "$inc" && mkdir -p "$inc" && cp -rL "$CUDA_DIR/include/." "$inc/" || return 1
+        sed -i -E 's/^(extern .*[^A-Za-z0-9_](sinpi|cospi|rsqrt)f?\((double|float) x\));/\1 noexcept (true);/' \
+            "$inc/crt/math_functions.h"
+        n="$(grep -cE '^extern .*[^A-Za-z0-9_](sinpi|cospi|rsqrt)f?\((double|float) x\) noexcept \(true\);' "$inc/crt/math_functions.h")"
+        [ "$n" = 6 ] || { echo "expected to fix 6 declarations in crt/math_functions.h, fixed $n"; return 1; }
+        touch "$inc/.fixed"
+    fi
+    if NVCC_PREPEND_FLAGS="-I$inc" "$NVCC" "${ccbin[@]}" -c "$t/probe.cu" -o "$t/probe.o" > "$t/fixed.log" 2>&1; then
+        NVCC_FIX="-I$inc"; echo "fixed headers work: $inc"; return 0
+    fi
+    cat "$t/fixed.log"
+    need_input "CUDA $v does not compile with this system's glibc, and the automatic header fix did not work (see the step log)." \
+        "Either install CUDA 12.9, which supports this glibc, next to 12.8 (the script prefers 12.9):" \
+        "  NVIDIA's cuda_12.9.1 runfile, as for 12.8: sudo sh <runfile> --silent --toolkit --toolkitpath=/usr/local/cuda-12.9 --no-man-page --override" \
+        "or add 'noexcept (true)' before the ';' of the sinpi, sinpif, cospi, cospif, rsqrt and rsqrtf" \
+        "declarations in $CUDA_DIR/include/crt/math_functions.h (sudo). Then run this script again."
 }
 
 mkvenv() {
@@ -265,10 +306,11 @@ venv_i23d() {
     if .venv-i23d/bin/python -c "import texture_baker, uv_unwrapper" 2>/dev/null; then
         echo "SF3D extensions already built"
     else
-        need_nvcc "SF3D's texture_baker and uv_unwrapper" torch
+        need_nvcc "SF3D's texture_baker and uv_unwrapper" torch || return 1
         (export CUDA_HOME="$CUDA_DIR" PATH="$CUDA_DIR/bin:$PATH" TORCH_CUDA_ARCH_LIST="$CAP" USE_CUDA=1
          # torch passes $CC to nvcc as -ccbin; NVCC_CCBIN covers any nvcc call without it
          if [ -n "$HOST_CXX" ]; then export CC="$HOST_CC" CXX="$HOST_CXX" NVCC_CCBIN="$HOST_CXX"; fi
+         if [ -n "$NVCC_FIX" ]; then export NVCC_PREPEND_FLAGS="$NVCC_FIX"; fi
          cd $SF3D_DIR && "$DEMO/.venv-i23d/bin/pip" install --no-build-isolation ./texture_baker ./uv_unwrapper) || return 1
     fi
     .venv-i23d/bin/pip install -r requirements/worker-base.txt &&
@@ -301,17 +343,20 @@ llama_build() {
         echo "llama-server $LLAMA_TAG with CUDA is already installed"; return 0
     fi
     command -v cmake >/dev/null || need_input "cmake not found (needed to build llama.cpp)." "Install: sudo apt install -y cmake"
-    need_nvcc "llama.cpp" any
+    need_nvcc "llama.cpp" any || return 1
     local host=(); [ -n "$HOST_CXX" ] && host=(-DCMAKE_CUDA_HOST_COMPILER="$HOST_CXX")
     [ -d $LLAMA_SRC/.git ] || git clone --depth 1 --branch $LLAMA_TAG https://github.com/ggml-org/llama.cpp $LLAMA_SRC || return 1
     if [ "$(git -C $LLAMA_SRC describe --tags 2>/dev/null)" != $LLAMA_TAG ]; then
         echo "$LLAMA_SRC is not release $LLAMA_TAG: delete it (rm -rf $DEMO/$LLAMA_SRC) and run again"; return 1
     fi
-    CUDA_HOME="$CUDA_DIR" PATH="$CUDA_DIR/bin:$PATH" \
-    cmake -S $LLAMA_SRC -B $LLAMA_SRC/build -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES="$CUDA_ARCH" \
+    # a configure that failed earlier leaves a cache that can keep the old compiler result
+    [ -f $LLAMA_SRC/build/Makefile ] || [ -f $LLAMA_SRC/build/build.ninja ] || rm -rf $LLAMA_SRC/build
+    (export CUDA_HOME="$CUDA_DIR" PATH="$CUDA_DIR/bin:$PATH"
+     if [ -n "$NVCC_FIX" ]; then export NVCC_PREPEND_FLAGS="$NVCC_FIX"; fi
+     cmake -S $LLAMA_SRC -B $LLAMA_SRC/build -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES="$CUDA_ARCH" \
         -DCMAKE_CUDA_COMPILER="$NVCC" "${host[@]}" \
         -DBUILD_SHARED_LIBS=OFF -DLLAMA_CURL=OFF -DCMAKE_BUILD_TYPE=Release &&
-    cmake --build $LLAMA_SRC/build --target llama-server -j"$(nproc)" &&
+     cmake --build $LLAMA_SRC/build --target llama-server -j"$(nproc)") &&
     mkdir -p "$(dirname $LLAMA_BIN)" && cp $LLAMA_SRC/build/bin/llama-server $LLAMA_BIN &&
     $LLAMA_BIN --list-devices 2>&1 | tee /dev/stderr | grep -q CUDA0
 }
@@ -508,6 +553,7 @@ main() {
     local failed result
     failed="$(awk -F'\t' '$3=="FAILED"' "$STEPS" | wc -l)"
     failed=$(( failed + $( [ -f "$RUN/verify.tsv" ] && awk -F'\t' '$4=="FAIL"' "$RUN/verify.tsv" | wc -l || echo 0) ))
+    failed=$(( failed + $( [ -f "$RUN/models.tsv" ] && awk -F'\t' '$4=="failed"' "$RUN/models.tsv" | wc -l || echo 0) ))
     if [ "$failed" -eq 0 ]; then result="completed"; else result="completed with $failed problem(s)"; fi
     write_report "$result"
     say ""; say "$result. Report: $DEMO/$REPORT"
