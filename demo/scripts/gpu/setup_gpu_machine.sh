@@ -326,9 +326,11 @@ venv_music() {
 venv_llm()       { mkvenv .venv-llm && .venv-llm/bin/pip install -r requirements/llm.txt; }
 venv_conductor() { mkvenv .venv && .venv/bin/pip install -r requirements/conductor.txt; }
 
-gpu_check() {   # task: torch must see the GPU; one automatic reinstall from cu128 if it does not
+gpu_check() {   # task: torch must run a kernel on the GPU; one automatic reinstall from cu128 if it cannot
     local py; py="$(vpy "${VENV[$1]}")"
-    local probe="import torch; assert torch.cuda.is_available(), 'torch.cuda.is_available() is False'; print(torch.__version__, torch.cuda.get_device_name(0), torch.cuda.get_device_capability(0))"
+    # is_available() is True even for a torch built without this card's arch (e.g. cu126 on sm_120),
+    # so run a real kernel: that fails with "no kernel image is available" and triggers the reinstall
+    local probe="import torch; assert torch.cuda.is_available(), 'torch.cuda.is_available() is False'; torch.ones(1, device='cuda').add_(1).item(); print(torch.__version__, torch.cuda.get_device_name(0), torch.cuda.get_device_capability(0))"
     "$py" -c "$probe" && return 0
     echo "retrying: reinstalling torch from the cu128 index"
     local pk="torch==$TORCH"

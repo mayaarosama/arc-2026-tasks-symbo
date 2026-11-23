@@ -1,0 +1,23 @@
+# The single-model show on one box: the workstation's GPU and its CPU as the two machines, conductor
+# on the same box (operator and stage pages at http://localhost:8000). Every setting, segment and input
+# comes from demo.yaml: the machine ids stay "workstation" and "cpu", so their settings apply unchanged.
+#   GPU workers: :8101-8105  config/worker-workstation.yaml      (started by setup_gpu_machine.sh)
+#   CPU workers: :8201-8205  config/worker-workstation-cpu.yaml
+# Own session and replay folders: these records are the workstation's CPU, not the CPU box.
+extends: demo.yaml
+session_dir: session-workstation
+replay_dir: replay-workstation
+machines:
+  - id: workstation
+    label: "Workstation GPU"
+    hardware: "RTX 5060 Ti · 16 GB VRAM"
+    color: "#4aa8ff"
+    one_task_at_a_time: true   # 16 GB: "Prepare" unloads the other task's worker first
+    workers: {t2i: http://127.0.0.1:8101, i23d: http://127.0.0.1:8102, music: http://127.0.0.1:8103, llm: http://127.0.0.1:8104, layout: http://127.0.0.1:8105}
+  - id: cpu
+    label: "Workstation CPU"
+    hardware: "Same box, no GPU (TBC: cores · RAM)"
+    color: "#f0a640"
+    one_task_at_a_time: true
+    show_full_recording: true  # time up / stopped / down: show the full rehearsal run + its time
+    workers: {t2i: http://127.0.0.1:8201, i23d: http://127.0.0.1:8202, music: http://127.0.0.1:8203, llm: http://127.0.0.1:8204, layout: http://127.0.0.1:8205}

@@ -1,0 +1,32 @@
+# The workstation's own CPU as a second demo machine, next to its GPU workers (worker-workstation.yaml).
+# Same venvs as the GPU workers (a cu128 torch runs on the CPU too); ports 8201-8205 so both sets run
+# at once. Start them with CUDA_VISIBLE_DEVICES="" so they never take GPU memory:
+#   t2i    .venv-t2i    python -m arcdemo.worker --config config/worker-workstation-cpu.yaml --task t2i    --port 8201
+#   i23d   .venv-i23d   (PYTHONPATH=third_party/stable-fast-3d)                          --task i23d   --port 8202
+#   music  .venv-music                                                                   --task music  --port 8203
+#   llm    .venv-llm                                                                     --task llm    --port 8204
+#   layout .venv-llm                                                                     --task layout --port 8205
+# Conductor: config/demo-workstation.yaml.
+machine: workstation-cpu
+results_dir: results-cpu   # own logs and llama-server logs, apart from the GPU workers' results/
+mock: false
+devices:
+  t2i: [cpu]
+  i23d: [cpu]
+  music: [cpu]
+  llm: [cpu]
+  layout: [cpu]    # the same llama-server path as llm
+# null = every physical core. The GPU workers on this box need a core or two to feed the GPU while both
+# machines run at once: set this to (physical cores - 2), from  lscpu | grep -E "^Core|^Socket"
+cpu_threads: null
+cpu_bf16: false         # set true only if the CPU has AMX / AVX512-BF16 (check: lscpu | grep -i bf16)
+micro_batch: 1
+exclusive_models: true   # loading a model first unloads any other in this worker
+preload:
+  t2i: [sd15]
+  i23d: []              # SF3D loaded on "Prepare"
+  music: []
+  llm: []
+  layout: []
+llama_server: third_party/llama.cpp/bin/llama-server   # CUDA build; CUDA_VISIBLE_DEVICES="" keeps it on the CPU
+llm_slots: 1

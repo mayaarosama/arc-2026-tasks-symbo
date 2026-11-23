@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import contextlib
 import os
+import sys
+from pathlib import Path
 
 import numpy as np
 from PIL import Image
@@ -45,6 +47,13 @@ class StableFast3D(Backend):
         dev = self.devices[0]
         if dev == "cpu":
             os.environ["SF3D_USE_CPU"] = "1"
+        try:
+            import sf3d  # noqa: F401 — on PYTHONPATH already (setup_gpu_machine.sh sets it)
+        except ModuleNotFoundError:   # a worker started by hand: use the repo's own clone
+            clone = Path(__file__).resolve().parents[3] / "third_party" / "stable-fast-3d"
+            if not (clone / "sf3d").is_dir():
+                raise ModuleNotFoundError(f"No module named 'sf3d': not on PYTHONPATH and no clone at {clone}")
+            sys.path.insert(0, str(clone))
         from sf3d.system import SF3D
 
         model = SF3D.from_pretrained(self.repo, config_name="config.yaml",
