@@ -125,6 +125,17 @@ bash scripts/gpu/start_workstation_show.sh     # GPU :8101–8105, CPU :8201–8
 Operator: `http://localhost:8000/operator`, stage: `http://localhost:8000/stage`. Logs in `results/`
 and `results-cpu/`. Safe to re-run: it stops what it started, then starts everything again.
 
+`--stop` unloads each model first, which frees GPU memory cleanly. To stop by hand instead (the same
+`pkill` lines it runs):
+
+```bash
+pkill -f "arcdemo.conductor"                           # conductor
+pkill -f "arcdemo.worker"                              # all workers, GPU and CPU
+pkill -f "arcdemo.worker .*--port 8101( |$)"           # one worker, by its port
+pkill -f "third_party/llama.cpp/bin/llama-server"      # leftover llama-server
+pgrep -af "arcdemo|llama-server"                       # check: prints nothing when all are stopped
+```
+
 It sets up the venvs and llama.cpp. Before each download it checks free disk and GPU memory
 (`scripts/gpu/plan_downloads.py`) and skips any model that doesn't fit. It then runs the offline
 check for the show and the full matrix, and starts the workers. Every step reuses what is already
