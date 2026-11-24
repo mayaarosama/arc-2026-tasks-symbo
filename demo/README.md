@@ -80,7 +80,7 @@ Scripts read it at run time and never print a value. Set `ARC_DEMO_TOKEN` before
 ## 1a. CPU box: Windows or Linux (one script each, same actions)
 
 ```bash
-scripts/cpu/cpu_box_linux.sh setup        # Linux: venvs, CPU torch, SF3D, Stable Audio 3, weights, offline check
+scripts/cpu/cpu_box_linux.sh setup        # Linux: venvs, CPU torch, SF3D, Stable Audio 3, llama.cpp, weights, offline check
 scripts/cpu/cpu_box_linux.sh start | status | stop
 ```
 
@@ -94,6 +94,11 @@ Needs Python 3.10/3.11 and git; plus `g++` (Linux) or Visual Studio Build Tools 
 with C++" (Windows), because Stable Fast 3D compiles two extensions. Pass `TORCH_VERSION=…` / `-TorchVersion`
 to match the DGX lock. `setup` ends by printing `cpu_threads` / `cpu_bf16` for `config/worker-cpu.yaml`
 and logs everything to `results/setup-<time>.log`.
+
+The CPU box runs all five workers: t2i :8101, i23d :8102, music :8103, llm :8104 and layout :8105 (the
+language model and Task 8, sharing `.venv-llm`). `setup` installs llama.cpp's prebuilt CPU build of
+the pinned release (b12608, `scripts/cpu/fetch_llama_cpp.py`, Windows or Linux x64) and downloads
+Qwen3.5 4B (2.7 GB). The firewall action opens 8101–8105.
 
 ## 1b. GPU machines (once)
 
@@ -158,6 +163,18 @@ curl http://localhost:8101/health
 
 ## 3. Conductor (operator laptop)
 
+Set it up once, with network: the conductor venv and the cut-out model for uploaded pictures (176 MB):
+
+```bash
+scripts/cpu/cpu_box_linux.sh conductor                                         # Linux / macOS
+powershell -ExecutionPolicy Bypass -File scripts\cpu\cpu_box_windows.ps1 conductor   # Windows
+```
+
+On a GPU machine, `setup_gpu_machine.sh --conductor` does the same. The cut-out runs on the CPU (about
+1–2 s a picture). With `onnxruntime-gpu` installed in place of `onnxruntime` it uses the GPU, and it
+falls back to the CPU if CUDA does not work; `ARC_CUTOUT_DEVICE=cpu` forces the CPU. Check it any
+time with `python scripts/verify_offline.py --cutout`.
+
 Edit the worker URLs in `config/demo.yaml`, then:
 
 ```bash
@@ -189,16 +206,46 @@ The operator page reads top to bottom: **Part of the show** → **What will run*
 expected output per machine, recordings on file) → **1 Load the model** → **2 Choose the input and
 start** → **3 Running now**.
 
-1. Before doors: start everything, pick Part 1, **Load the AI model on all machines**, **Start** once
+1. Before doors: start everything, pick Part 1, **Load this task's model on all machines**, **Start** once
    (warm-up, not logged in the summary).
-2. Per part: **Load the AI model on all machines** (off the clock; on 16 GB machines it first unloads
-   the other task), pick an input from **Example prompt**, **▶ Start on all machines**.
+2. Per part: **Load this task's model on all machines** (off the clock). It first unloads every other task's model on every
+   machine, so only this task is in memory (the worker table's *Memory* column shows the RAM coming
+   back; `keep_other_tasks: true` on a machine in the config keeps them), then pick an input from **Example prompt**, **▶ Start on all machines**.
 3. Part 2 (the stopwatch): when DGX and workstation are done, **■ Stop all machines** — the CPU shows
    its full recording and how long it took (or *still running* if none is on file).
 4. A machine misbehaving: **■ Stop** or **Show recording** on its row. Every substitution is badged.
 5. Part 5: choose *Type a new prompt…* (or a spare prompt), **Check the prompt is safe**, start.
    *More options* holds forced recordings and a different time limit.
 6. **Summary chart** on the projector for the close.
+
+## Image to 3D from your own picture
+
+In an image-to-3D part, under **Example prompt**, choose **Or use a picture of your own** and pick a file.
+The conductor checks the picture and cuts the object out of its background. It then centres the
+object on a 512 × 512 transparent square, the same form as the stage examples. It does this once, on
+the operator laptop, so every machine gets the identical file; the job carries it to the workers.
+The operator page shows your picture next to *what every machine gets*. Check the cut-out, then
+**▶ Start**. The picture stays in the list (*Uploaded pictures*) until the session folder is cleared.
+
+What makes a good picture (also under *What makes a good picture* on the page):
+
+| | Requirement | Why |
+| --- | --- | --- |
+| File | PNG, JPEG or WebP, up to 10 MB; shortest side 512 px or more (256 px minimum, with a warning below 512) | SF3D works from 512 px; larger pictures are scaled down |
+| Content | One object, whole: nothing touching the edge of the picture | A cut-off part comes out flat; a touching object is refused |
+| Background | Plain, in a different colour from the object. A PNG with a transparent background is used as it is | The cut-out (U²-Net, rembg's default model) fails on busy or same-coloured backgrounds |
+| View | Three-quarter view from slightly above (about 20° up, 35° round) | Matches the stage examples and how SF3D was trained |
+| Light | Even and soft; no hard shadows, glare or strong reflections | Light is baked into the texture: a shadow becomes dark paint |
+| Avoid | Glass and see-through objects, mirrors, thin wires or hair, text-heavy surfaces, people, several objects | Known SF3D failure cases; people also raise consent questions |
+
+Refused with a reason on the page: files that are not PNG/JPEG/WebP or are over 10 MB, pictures
+under 256 px, a cut-out that finds no object or keeps almost the whole picture, and an object
+touching the edge.
+
+An uploaded picture runs **live only**: there is no rehearsal recording (a failed machine shows its
+error, not a REPLAY) and no scanned original, so no error score. The stage says so in the caption.
+Background removal needs the model from `download_weights.py --cutout`. Without it, only PNGs that
+already have a transparent background work, and the page says so.
 
 ## Task 8 (Furnish the room) in the demo interface
 
@@ -221,13 +268,13 @@ env), and the parts are *Furnish the room* (seg8) and *Rooms in a minute* (seg9)
 1. Pick **Furnish the room**. *What will run* shows the floor plan with the wall names the model uses,
    the request in one sentence, and, under **Prompt**, exactly what the model is sent (rules, two
    worked examples, this room, and the grammar).
-2. **Load the AI model on all machines.** Loading plus the prompt warm-up takes about 2 minutes on a CPU and is off the clock.
+2. **Load this task's model on all machines**. Loading plus the prompt warm-up takes about 2 minutes on a CPU and is off the clock.
 3. Choose the room under **Example prompt** (bedroom, L-shaped living room, library) and **▶ Start**.
 
 What the projector shows:
 
 - **Header:** the plan thumbnail (wall names, the door in yellow) and the request in words.
-- **Each machine's cell, left:** the 3D room. Each piece of furniture drops in as the model writes its line, numbered in placement order. Flagged pieces get a red frame: outside the walls, overlapping, or blocking the door. They are never corrected.
+- **Each machine's cell, left:** the 3D room. Each piece of furniture drops in as the model writes its line, numbered in placement order. Flagged pieces get a red frame: outside the walls, overlapping, or blocking the door. In seg8 and seg9 they stay as the model wrote them. In seg8b *Furnish and fix* the model is told each problem and fixes it itself: the piece slides to its new place and turns green, marked ↻. The code never moves furniture.
 - **Each machine's cell, right:** *What the model wrote*. The model's lines appear as they are written, numbered like the scene labels, in red with the reason when flagged.
 - **Result:** time, number of objects and flags.
 

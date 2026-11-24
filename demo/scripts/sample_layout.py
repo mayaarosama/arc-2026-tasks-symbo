@@ -93,24 +93,19 @@ def main() -> int:
                   f"@ {res['tokens_per_second']} tok/s {res['message']}")
         c.post("/unload", json={})               # stop llama-server; it would outlive this script
 
-    write_prompt(out, rooms)
+    write_prompt(out, rooms, settings.get("layout_prompt"))
     write_summary(out, cfg, settings, load_s, runs)
     write_review_page(out, runs)
     print("review folder:", out)
     return 0 if all(r["result"]["status"] == "ok" for r in runs) else 1
 
 
-def write_prompt(out: Path, rooms: list) -> None:
-    """The exact chat messages the model saw for the first room (later rooms differ only in the last one)."""
-    from arcdemo.worker.backends import layout as L
-    room = rooms[0]
-    spec = {"room_type": room["room_type"], "floor_plan": room["floor_plan"], "door": room.get("door"),
-            "max_objects": room.get("max_objects", 10)}
-    parts = [f"# prompt {L.PROMPT_VERSION} · rendered for {room['id']}", ""]
-    for m in L.messages(spec):
-        parts += [f"=== {m['role']} ===", m["content"], ""]
-    parts += ["=== grammar ===", L.grammar(spec)]
-    (out / "prompt.txt").write_text("\n".join(parts) + "\n", encoding="utf-8")
+def write_prompt(out: Path, rooms: list, style: str | None = None) -> None:
+    """The exact chat messages the model saw, for each room (LayoutGPT picks different examples per room)."""
+    from arcdemo.conductor.core import layout_prompt_text
+    text = "\n\n".join(f"########## {room['id']}\n" + layout_prompt_text(room, room.get("max_objects"), style)
+                       for room in rooms)
+    (out / "prompt.txt").write_text(text + "\n", encoding="utf-8")
 
 
 def write_summary(out: Path, cfg: dict, settings: dict, load_s: float, runs: list) -> None:
@@ -119,25 +114,30 @@ def write_summary(out: Path, cfg: dict, settings: dict, load_s: float, runs: lis
              f"- Model: `{settings['model']}` ({first.get('quant', '')}), {first.get('server', '?')}",
              f"- Settings: {json.dumps({k: v for k, v in settings.items() if k != 'model'})}",
              f"- Prompt warmed at load: {first.get('prompt_warmed')} · load + warm-up {load_s} s (off the clock)",
-             "", "| Room | Status | Time | First object | Objects | Flagged | Tokens | tok/s |",
-             "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+             "", "| Room | Status | Time | First object | Objects | Flagged | First pass flagged | Fixed · improved · removed · tries | Tokens | tok/s |",
+             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for r in runs:
         res, s = r["result"], r["record"].get("summary", {})
         objs = r["record"].get("objects", [])
-        flagged = sum(1 for o in objs if o.get("issues"))
+        flagged = s.get("objects", 0) - s.get("clean", 0)          # removed objects excluded
+        fixes = (f"{s['fixed']} · {s['improved']} · {s['removed']} · {s['fixes_tried']}" if "fixed" in s else "—")
         lines.append(f"| {r['room']['id']} {r['room']['label']} | {res['status']} | {res['all_outputs_seconds']} s | "
-                     f"{objs[0]['t'] if objs else '—'} s | {s.get('objects', 0)} | {flagged} | {res['tokens']} | "
-                     f"{res['tokens_per_second']} |")
+                     f"{objs[0]['t'] if objs else '—'} s | {s.get('objects', 0)} | {flagged} | "
+                     f"{s.get('first_flagged', flagged)} | {fixes} | {res['tokens']} | {res['tokens_per_second']} |")
     for r in runs:
         room, objs = r["room"], r["record"].get("objects", [])
         lines += ["", f"## {room['id']} · {room['label']}", "",
                   f"Outline {room['floor_plan']} · door {room.get('door')} · up to "
                   f"{room.get('max_objects')} objects", "",
-                  "| # | Object | x | y | w × d × h | Facing | At | Problems |", "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+                  "| # | Object | x | y | w × d × h | Facing | At | Problems | Fix history |",
+                  "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
         for o in objs:
             facing = {0: "north", 90: "east", 180: "south", 270: "west"}.get(o["rot"], f"{o['rot']}°")
+            hist = " → ".join(f"{h['op']} {h['t']} s ({', '.join(h['issues']) or 'clean'})"
+                              for h in o.get("history", [])) or "—"
+            probs = "removed" if o.get("removed") is not None else (", ".join(o["issues"]) or "—")
             lines.append(f"| {o['i'] + 1} | {o['cls']} | {o['x']} | {o['y']} | {o['w']} × {o['d']} × {o['h']} | "
-                         f"{facing} | {o['t']} s | {', '.join(o['issues']) or '—'} |")
+                         f"{facing} | {o['t']} s | {probs} | {hist} |")
         if r["result"]["message"] and r["result"]["status"] != "ok":
             lines += ["", f"**{r['result']['status']}**: {r['result']['message']}"]
         lines += ["", "Raw model output:", "", "```text", r["record"].get("raw", "").rstrip(), "```"]

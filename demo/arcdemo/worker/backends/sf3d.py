@@ -19,25 +19,12 @@ import os
 import sys
 from pathlib import Path
 
-import numpy as np
 from PIL import Image
 
+from ...imageprep import resize_foreground   # shared with the conductor's upload step
 from ...schemas import JobRequest
 from ..metrics import cuda_sync
 from .base import Backend, JobContext
-
-
-def resize_foreground(img: Image.Image, ratio: float = 0.85) -> Image.Image:
-    """Crop to the alpha bbox and pad to a square where the object fills `ratio` of the side."""
-    a = np.asarray(img)[..., 3]
-    ys, xs = np.nonzero(a > 0)
-    if len(xs) == 0:
-        return img
-    crop = img.crop((xs.min(), ys.min(), xs.max() + 1, ys.max() + 1))
-    side = int(max(crop.size) / ratio)
-    canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
-    canvas.paste(crop, ((side - crop.width) // 2, (side - crop.height) // 2))
-    return canvas
 
 
 class StableFast3D(Backend):

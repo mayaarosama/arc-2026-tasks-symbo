@@ -26,18 +26,33 @@ window.LayoutCanvas = (() => {
     return [o.x - ex / 2, o.y - ey / 2, o.x + ex / 2, o.y + ey / 2];
   }
 
-  // Objects to draw now: replays reveal each object at its recorded time; throughput runs show
-  // the room stream 0 is currently working on.
-  function visible(round, c) {
-    let objs = c.objects || [];
-    if (c.mode === "REPLAY" && !c.recorded) {
-      const t = Demo.elapsed(round);
-      objs = objs.filter((o) => o.t == null || o.t <= t);
-    }
-    if (!objs.length) return [];
-    const room = Math.max(...objs.map((o) => o.room || 0));
-    return objs.filter((o) => (o.room || 0) === room);
+  // An object as it stood at time t (seconds on the job clock), or null if it was not placed yet or
+  // was removed by then. Self-correction keeps every change in o.history (place, repair, move,
+  // recheck, remove), so a replay shows each fix at its recorded time. fixing: fix attempts so far.
+  const FIX_OPS = new Set(["repair", "move", "best", "remove"]);
+  function at(o, t) {
+    if (o.t != null && o.t > t) return null;
+    if (o.removed != null && o.removed <= t) return null;
+    if (!o.history) return o;
+    let h = o.history[0], fixing = 0;
+    for (const e of o.history) if (e.t <= t) { h = e; if (e.op === "repair" || e.op === "move") fixing++; }
+    return { ...o, x: h.x, y: h.y, rot: h.rot, wall: h.wall, at: h.at, issues: h.issues, fixing,
+      first_bad: !!(o.history[0].issues && o.history[0].issues.length) };
   }
+
+  // Objects to draw now: replays reveal each object (and each fix) at its recorded time; throughput
+  // runs show the room stream 0 is currently working on.
+  function visible(round, c) {
+    const all = c.objects || [];
+    const t = c.mode === "REPLAY" && !c.recorded && window.Demo ? Demo.elapsed(round) : Infinity;
+    const shown = all.filter((o) => o.t == null || o.t <= t);
+    if (!shown.length) return [];
+    const room = Math.max(...shown.map((o) => o.room || 0));
+    return shown.filter((o) => (o.room || 0) === room).map((o) => at(o, t)).filter(Boolean);
+  }
+
+  // what a label shows: placement number, name, "!" while flagged, a turn arrow once the model fixed it
+  const mark = (o) => (o.issues && o.issues.length ? " !" : "") + (o.fixing ? " ↻" + (o.fixing > 1 ? o.fixing : "") : "");
 
   function attach(outputs) {
     const cv = document.createElement("canvas");
@@ -187,7 +202,7 @@ window.LayoutCanvas = (() => {
     const taken = [];
     const hits = (r) => taken.some((t) => r[0] < t[2] && t[0] < r[2] && r[1] < t[3] && t[1] < r[3]);
     for (const l of label.reverse()) {
-      const txt = `${l.o.i + 1} ${l.o.cls.replace(/_/g, " ")}${l.bad ? " !" : ""}`;
+      const txt = `${l.o.i + 1} ${l.o.cls.replace(/_/g, " ")}${mark(l.o)}`;
       g.font = `${l.newest ? 700 : 500} ${Math.round((l.newest ? 13 : 11) * dpr)}px Segoe UI, system-ui, sans-serif`;
       const wpx = g.measureText(txt).width + 8 * dpr, hpx = 17 * dpr;
       let [x, y] = l.at;
@@ -206,10 +221,12 @@ window.LayoutCanvas = (() => {
     const flags = objs.flatMap((o) => o.issues || []);
     const bad = objs.filter((o) => o.issues && o.issues.length).length;
     const kinds = [...new Set(flags)];   // outside the walls / overlapping an earlier object / blocking the door
-    return `${objs.length} object${objs.length === 1 ? "" : "s"}` + (bad ? ` · ${bad} flagged (${kinds.join(", ")})` : " · no problems");
+    const fixed = objs.filter((o) => o.fixing && !(o.issues && o.issues.length)).length;
+    return `${objs.length} object${objs.length === 1 ? "" : "s"}` + (bad ? ` · ${bad} flagged (${kinds.join(", ")})` : " · no problems")
+      + (fixed ? ` · ${fixed} fixed by the model` : "");
   }
 
-  return { attach, draw, visible, tally };
+  return { attach, draw, visible, tally, at, mark };
 })();
 // The 3D view (layout3d.js, a module, loads after this) replaces it when WebGL works.
 window.Layout = window.Layout || window.LayoutCanvas;

@@ -20,6 +20,8 @@ timeout_grace_seconds: 15
 # A worker that cannot be polled for this long is treated as unreachable.
 unreachable_after_seconds: 6
 
+# "Load this task's model" first unloads every other task's model on every machine, so only the
+# chosen task is in RAM / VRAM. A machine with  keep_other_tasks: true  keeps them loaded.
 machines:
   - id: dgx
     label: "DGX H200"
@@ -35,7 +37,6 @@ machines:
     label: "Workstation"
     hardware: "1 GPU · 16 GB VRAM"
     color: "#4aa8ff"
-    one_task_at_a_time: true   # 16 GB: "Prepare" unloads the other task's worker first
     workers:
       t2i: http://workstation.local:8101
       i23d: http://workstation.local:8102
@@ -46,7 +47,6 @@ machines:
     label: "CPU only"
     hardware: "No GPU · 16 GB RAM"
     color: "#f0a640"
-    one_task_at_a_time: true
     show_full_recording: true  # time up / stopped / down: show the full rehearsal run + its time
     workers:
       t2i: http://cpu.local:8101
@@ -93,6 +93,12 @@ settings:
   layout:         # task 8: the Task 4 model placing furniture; one model everywhere (TBC from rehearsal)
     iso_quality:   # the same room on every machine (greedy), built object by object; compare the time
       all:         {model: qwen35-4b-layout, streams: 1, max_tokens: 400, temperature: 0}
+    iso_quality+fix:   # seg8b: the same, and the model fixes its own mistakes (repair each flagged line at
+                       # once, up to 2 tries; then up to 3 review rounds of move/remove on the finished room)
+      all:         {model: qwen35-4b-layout, streams: 1, max_tokens: 400, temperature: 0, repairs: 2, review_rounds: 3}
+    iso_quality+layoutgpt:   # seg8c: the same model and rooms with LayoutGPT's published prompt (CSS lines, the
+                             # room given only as its size, 4 similar example rooms). Lines are ~60 tokens.
+      all:         {model: qwen35-4b-layout, streams: 1, max_tokens: 800, temperature: 0, layout_prompt: layoutgpt}
     iso_time:      # throughput: rooms furnished at once, repeated until the bell
       all:         {model: qwen35-4b-layout, max_tokens: 400, temperature: 0.7, repeat_until_budget: true}
       dgx:         {model: qwen35-4b-layout, streams: 64}
@@ -200,6 +206,20 @@ segments:
     budget_seconds: null
     inputs: [lay-01, lay-02, lay-03]
     caption: "Same model, same floor plan, greedy decoding: every machine builds the same room, one object at a time. Only the clock differs."
+  - id: seg8c                      # task 8 with LayoutGPT's published prompt, for comparison
+    title: "The published method"
+    task: layout
+    protocol: iso_quality+layoutgpt
+    budget_seconds: null
+    inputs: [lay-01, lay-02, lay-03]
+    caption: "The same model with LayoutGPT's prompt (NeurIPS 2023): each piece as a line of sizes and coordinates, the room given only as its size, plus four similar example rooms. Compare with Furnish the room."
+  - id: seg8b                      # task 8 with self-correction: the model fixes what the room checks flag
+    title: "Furnish and fix"
+    task: layout
+    protocol: iso_quality+fix
+    budget_seconds: null
+    inputs: [lay-01, lay-02, lay-03]
+    caption: "Same room, but now every mistake is sent back: the model rewrites a flagged piece at once, then reviews the finished room and moves what still clashes. Every fix is the model's own; red turns green."
   - id: seg9
     title: "Rooms in a minute"
     task: layout

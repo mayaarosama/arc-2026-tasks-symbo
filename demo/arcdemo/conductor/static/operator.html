@@ -38,6 +38,11 @@
   .plan dt { color:var(--ink-2); font-size:12.5px; }
   .plan dd { margin:0; }
   .plan .task { font-size:17px; font-weight:600; }
+  .spec { display:grid; grid-template-columns:max-content 1fr; gap:4px 10px; margin:6px 0; font-size:13px; }
+  .spec dt { font-weight:600; } .spec dd { margin:0; }
+  .upload-preview figure { margin:6px 10px 0 0; text-align:center; font-size:12px; color:var(--muted, #8a93a0); }
+  .upload-preview img { max-width:150px; max-height:150px; display:block; border-radius:6px; border:1px solid var(--line);
+    background: repeating-conic-gradient(#ccc 0 25%, #fff 0 50%) 50% / 16px 16px; }
   .plan .input-img { max-width:120px; max-height:90px; border-radius:6px; border:1px solid var(--line); display:block; margin-top:4px; background:#fff; }
   .plan ul { margin:0; padding-left:0; list-style:none; }
   .plan .plan-svg { height:120px; width:auto; display:block; margin-top:6px; overflow:visible; }
@@ -84,7 +89,7 @@
 
     <section>
       <h3><span class="step">1</span>Load the model</h3>
-      <button id="prepare">Load the AI model on all machines</button>
+      <button id="prepare">Load this task's model on all machines (frees the others)</button>
       <div class="muted" style="margin-top:6px">Do this once per part, before starting. Loading time is not counted.</div>
       <div class="muted" id="prepare-state" style="margin-top:6px"></div>
     </section>
@@ -93,6 +98,13 @@
       <h3><span class="step">2</span>Choose the input and start</h3>
       <label class="field" for="example">Example prompt</label>
       <select id="example"></select>
+      <div id="upload-box" hidden>
+        <label class="field" for="upload">Or use a picture of your own</label>
+        <input type="file" id="upload" accept="image/png,image/jpeg,image/webp">
+        <details><summary>What makes a good picture</summary><dl id="upload-spec" class="spec"></dl></details>
+        <div class="msg" id="upload-msg"></div>
+        <div class="row upload-preview" id="upload-preview"></div>
+      </div>
       <div id="live-box" hidden>
         <label class="field" for="prompt">Prompt to run (typed by the operator, never by the audience)</label>
         <textarea id="prompt" rows="3" placeholder="Type the audience's idea here"></textarea>
@@ -136,7 +148,7 @@
     <section>
       <h3>Machines</h3>
       <div id="warnings" class="warn"></div>
-      <table><thead><tr><th>Machine · task</th><th>Status</th><th>Model in memory</th><th>Software version</th><th>Response time</th></tr></thead>
+      <table><thead><tr><th>Machine · task</th><th>Status</th><th>Model in memory</th><th>Memory</th><th>Software version</th><th>Response time</th></tr></thead>
         <tbody id="health"></tbody></table>
     </section>
   </div>

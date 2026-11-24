@@ -404,6 +404,37 @@ def test_prepare_while_last_run_still_ending_loads_once_idle(stack):
     assert final["dgx"]["status"] == "ready"
 
 
+async def _prepared(cond: Conductor, segment: str) -> dict:
+    await cond.prepare(segment)
+    await asyncio.wait_for(cond._prepare_task, 20)       # the watcher ends when every machine is settled
+    return {mid: dict(p) for mid, p in cond.prepare_state.items()}
+
+
+def test_prepare_frees_every_other_task_on_every_machine(stack):
+    """Load t2i, then press Load for the layout segment: only the layout model stays in memory,
+    on every machine, except one marked keep_other_tasks."""
+    cfg, _ = stack
+    cfg.machine("workstation")["keep_other_tasks"] = True
+
+    async def go():
+        cond = Conductor(cfg)
+        await cond.refresh_health()
+        await _prepared(cond, "seg2")                     # t2i everywhere
+        prep = await _prepared(cond, "seg8")              # layout
+        loaded = {m["id"]: httpx.get(cfg.worker_url(m["id"], "layout") + "/health").json()["loaded"]
+                  for m in cfg.machines}
+        await cond.http.aclose()
+        return prep, loaded
+
+    prep, loaded = asyncio.run(go())
+    t2i = cfg.settings("t2i", cfg.segment("seg2")["protocol"], "dgx")["model"]
+    lay = cfg.settings("layout", cfg.segment("seg8")["protocol"], "dgx")["model"]
+    assert prep["dgx"]["status"] == "ready" and t2i in prep["dgx"]["freed"], prep["dgx"]
+    assert loaded["dgx"] == [lay] and loaded["cpu"] == [lay], loaded
+    # keep_other_tasks: nothing freed by the conductor (the worker itself is still exclusive)
+    assert prep["workstation"]["freed"] == [] and prep["workstation"]["status"] == "ready"
+
+
 def test_prepare_says_why_it_failed_and_times_out(stack):
     cfg, procs = stack
     procs["cpu"].terminate()
@@ -417,9 +448,55 @@ def test_prepare_says_why_it_failed_and_times_out(stack):
         # a load that never completes (no error reported either): must not stay "loading" forever
         cond.prepare_state["dgx"] = {"status": "loading", "model": "sd35-large", "since": time.time()}
         await cond._watch_prepare("t2i", timeout=1.5)
+        cond._prepare_task.cancel()                          # the background watcher, before closing http
+        await asyncio.gather(cond._prepare_task, return_exceptions=True)
         await cond.http.aclose()
         return cpu, cond.prepare_state["dgx"]
 
     cpu, dgx = asyncio.run(go())
     assert cpu["status"] == "error" and cpu["message"].startswith("the machine is not reachable"), cpu
     assert dgx["status"] == "error" and dgx["message"].startswith("still not loaded after"), dgx
+
+
+def test_furnish_and_fix_round_sends_the_self_correction_settings(stack):
+    cfg, _ = stack
+    assert cfg.settings("layout", "iso_quality+fix", "dgx")["repairs"] == 2
+    rnd = asyncio.run(one_round(cfg, "seg8b", "lay-01"))
+    for mid, c in rnd["cells"].items():
+        assert c["status"] == "ok", (mid, c["note"])
+        assert (c["result"]["settings"]["repairs"], c["result"]["settings"]["review_rounds"]) == (2, 3)
+        assert c["objects"] and not any(o["issues"] for o in c["objects"])   # the mock room is clean
+
+
+def test_uploaded_picture_runs_live_and_every_machine_gets_the_same_file(stack, tmp_path):
+    import base64
+    import io
+
+    from PIL import Image, ImageDraw
+    cfg, _ = stack
+    img = Image.new("RGBA", (800, 600), (0, 0, 0, 0))
+    ImageDraw.Draw(img).ellipse((250, 150, 550, 450), fill=(30, 120, 200, 255))
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+
+    async def go():
+        cond = Conductor(cfg)
+        await cond.refresh_health()
+        item = cond.add_upload("my mug.png", buf.getvalue())
+        rnd = await cond.start_round("seg3", item["id"])
+        await cond.wait_round(60)
+        again = Conductor(cfg)                                # a restart still offers the upload
+        await cond.http.aclose()
+        await again.http.aclose()
+        return item, rnd, again.cfg.input("i23d", item["id"])
+
+    item, rnd, reloaded = asyncio.run(go())
+    assert item["id"].startswith("up-") and item["label"] == "my mug" and reloaded["upload"] == item["upload"]
+    sent = (cfg.session_dir / item["upload"]).read_bytes()
+    for mid, c in rnd["cells"].items():
+        assert c["mode"] == "LIVE" and c["status"] in ("ok", "budget_exceeded"), (mid, c["note"])
+        got = list((tmp_path / f"results-{mid}" / "inputs").glob("*.png"))
+        assert len(got) == 1 and got[0].read_bytes() == sent, mid
+        assert "score" not in c or not c["score"]                 # no reference mesh for an upload
+    assert rnd["input"]["input_url"].startswith("/media/uploads/")
+    assert rnd["caption"].endswith("so no error is measured.")

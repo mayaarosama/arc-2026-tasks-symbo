@@ -61,6 +61,10 @@ Preparation steps:
 
 - [ ] Choose the three GSO object IDs and record them here.
 
+### Operator uploads (live only)
+
+The operator can also run a picture of their own (demo `README.md`, "Image to 3D from your own picture", for the input spec). The conductor checks it, cuts the object out with U²-Net (rembg's default model, run through onnxruntime) and normalises it to 512 × 512 RGBA, like the stage inputs, once, so every machine gets the identical file inside the job (`image_b64`). Uploads have no ground-truth mesh, so they are not scored, and no rehearsal recording, so a failed machine shows its error rather than a replay.
+
 ## Scoring against ground truth
 
 This is what makes the task credible to an academic audience, and it runs after the mesh is produced, not on the clock.

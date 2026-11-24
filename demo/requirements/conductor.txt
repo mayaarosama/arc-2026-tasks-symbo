@@ -1,4 +1,5 @@
-# Operator laptop: conductor, stage UI, scoring, GSO preparation, tests.
+# Operator laptop: conductor, stage UI, scoring, uploads, tests.
+# (scripts/prepare_gso.py also needs pyrender: requirements/gso.txt, installed separately.)
 fastapi>=0.115
 uvicorn[standard]>=0.30
 httpx>=0.27
@@ -6,10 +7,9 @@ pydantic>=2.7
 pyyaml>=6
 pillow>=10
 numpy>=1.26
+onnxruntime>=1.17   # background removal for image-to-3D uploads (arcdemo/imageprep.py; model: download_weights.py --cutout)
 scipy>=1.11
 trimesh>=4.4
 psutil>=5.9
 requests>=2.31
-pyrender==0.1.45
-PyOpenGL==3.1.9        # pyrender pins 3.1.0, which fails on texture upload under Python 3.12 — 3.1.9 works
 pytest>=8

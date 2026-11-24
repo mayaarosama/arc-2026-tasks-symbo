@@ -99,6 +99,11 @@ class DemoConfig:
                 return dict(item)
         raise KeyError(f"no {task} input '{input_id}'")
 
+    def add_input(self, task: str, item: dict) -> None:
+        """A runtime input (an operator upload), offered like the configured ones; replaces one with the same id."""
+        items = self.inputs.setdefault(task, [])
+        items[:] = [x for x in items if x["id"] != item["id"]] + [item]
+
     def settings(self, task: str, protocol: str, mid: str, model: Optional[str] = None) -> dict[str, Any]:
         """The planned settings for one cell. `model` (the operator's pick) replaces the planned
         model and applies that model's own settings from model_choices (resolution, steps...);

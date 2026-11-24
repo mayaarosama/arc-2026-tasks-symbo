@@ -344,7 +344,7 @@ PYTHONPATH=third_party/stable-fast-3d \
 
 ## 7. Run the complete demo
 
-**On the workstation: start the five workers.** Each runs offline in its own env and logs to `results/`. Only SD 1.5 loads at start. The others load when the operator presses *Load the AI model on all machines*, which first unloads the previous task.
+**On the workstation: start the five workers.** Each runs offline in its own env and logs to `results/`. Only SD 1.5 loads at start. The others load when the operator presses *Load this task's model on all machines*, which first unloads every other task's model.
 
 ```bash
 cd $DEMO
@@ -440,7 +440,7 @@ Worker logs are `results/worker-<task>.log`. A crash before logging starts lands
 | llama.cpp build fails at `ggml-cuda` | `nvcc` older than 12.8 has no sm_120 | check `nvcc --version`, then rerun the cmake configure |
 | `llama-server --list-devices` shows no CUDA0 | built without `-DGGML_CUDA=ON` | delete `third_party/llama.cpp-src/build` and rebuild |
 | `verify_offline.py` FAIL naming a repo | that repo is missing from `hf-cache/hub` | rerun section 5 for that task, with network |
-| A worker loads, then `CUDA out of memory` | another task's model is still on the GPU | press *Load the AI model* again, which unloads it; check `nvidia-smi` for stray `python` or `llama-server` processes |
+| A worker loads, then `CUDA out of memory` | another task's model is still on the GPU | press *Load this task's model* again, which unloads it; check `nvidia-smi` for stray `python` or `llama-server` processes |
 | Operator page shows the workstation DOWN | name, firewall or token | `curl http://workstation.local:8101/health` from the laptop; `sudo ufw allow 8101:8105/tcp`; the same `ARC_DEMO_TOKEN` on both sides |
 | Workers panel shows an env hash mismatch in yellow | library versions differ from the other machines | compare `GET <worker>/env` on both machines; freeze per `locks/README.md` |
 

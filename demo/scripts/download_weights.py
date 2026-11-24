@@ -3,6 +3,7 @@
     export HF_TOKEN=hf_...           # from config.txt (the CPU-box scripts do this); account must accept each gated licence
     python scripts/download_weights.py --machine dgx --task t2i
     python scripts/download_weights.py --machine workstation --task i23d --dry-run
+    python scripts/download_weights.py --cutout      # operator laptop: background removal for uploads
 
 The model list is derived from config/demo.yaml (every model that machine is configured to run
 for that task, in any protocol) plus the declared fallbacks, so config and downloads cannot drift.
@@ -58,8 +59,13 @@ def main() -> None:
     ap.add_argument("--machine", help="with --task: everything this machine runs for the task")
     ap.add_argument("--task")
     ap.add_argument("--model", action="append", help="instead: just these models.yaml keys (repeatable)")
+    ap.add_argument("--cutout", action="store_true",
+                    help="the operator laptop's background-removal model (image-to-3D uploads)")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
+    if a.cutout:
+        fetch_cutout(a.dry_run)
+        return
     cfg = DemoConfig(a.config)
     if a.model:
         keys, what = set(a.model), "models " + ", ".join(a.model)
@@ -83,6 +89,34 @@ def main() -> None:
             failed.append(r)
     if failed:
         sys.exit(f"{len(failed)} repo(s) not downloaded: {', '.join(failed)}")
+
+
+# U^2-Net, the model rembg (and SF3D's run.py) use by default, from rembg's GitHub release. Not on
+# the Hugging Face Hub under an official repo. Saved where arcdemo/imageprep.py looks for it.
+CUTOUT_URL = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx"
+CUTOUT_BYTES = 175_997_641
+
+
+def fetch_cutout(dry_run: bool = False) -> None:
+    import urllib.request
+    dest = Path(__file__).resolve().parents[1] / "weights" / "u2net" / "u2net.onnx"
+    print(f"cut-out model: {CUTOUT_URL} -> {dest}")
+    if dest.is_file() and dest.stat().st_size == CUTOUT_BYTES:
+        print("cached", dest)
+        return
+    if dry_run:
+        return
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    part = dest.with_suffix(".part")
+    try:
+        urllib.request.urlretrieve(CUTOUT_URL, part)
+    except OSError as e:
+        sys.exit(f"FAILED cut-out model: {e}")
+    if part.stat().st_size != CUTOUT_BYTES:
+        part.unlink()
+        sys.exit(f"FAILED cut-out model: expected {CUTOUT_BYTES} bytes")
+    part.replace(dest)
+    print("ok", dest)
 
 
 def fetch(repo: str, ignore=None, allow=None) -> tuple[str, str]:

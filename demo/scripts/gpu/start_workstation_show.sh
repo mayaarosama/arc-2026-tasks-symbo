@@ -101,6 +101,9 @@ if [ ! -x .venv/bin/python ]; then
     echo "creating the conductor venv (.venv)"
     "${PY:-python3.11}" -m venv .venv && .venv/bin/pip install -r requirements/conductor.txt || exit 1
 fi
+if [ ! -f weights/u2net/u2net.onnx ]; then   # uploaded pictures (image-to-3D) need it; the rest of the show does not
+    .venv/bin/python scripts/download_weights.py --cutout         || echo "WARNING: no cut-out model: uploads work only as PNGs with a transparent background"
+fi
 CFG=config/demo-workstation.yaml
 if [ $CPU = 0 ]; then   # GPU only: drop the CPU machine so the page does not show it as down
     CFG=config/demo-workstation-gpu.yaml

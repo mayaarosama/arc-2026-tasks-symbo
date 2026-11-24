@@ -91,20 +91,26 @@ class ModelManager:
             self.loaded[key] = backend
             return backend
 
-    def unload(self, key: Optional[str] = None) -> None:
+    def unload(self, key: Optional[str] = None, keep_task: Optional[str] = None) -> list[str]:
+        """Unload `key`, or every model (keep_task: every model except that task's). -> unloaded keys"""
         with self.lock:
-            for k in [key] if key else list(self.loaded):
+            keys = [key] if key else [k for k in self.loaded
+                                      if not keep_task or self.cfg["models"][k]["task"] != keep_task]
+            gone = []
+            for k in keys:
                 b = self.loaded.pop(k, None)
                 if b is not None:
                     b.unload()
+                    gone.append(k)
                     log.info("unloaded %s", k)
             free_memory()
+            return gone
 
     def ensure(self, key: str) -> Backend:
-        """Load `key` if needed. With exclusive_models (16 GB machines) every other model in
-        this worker is unloaded first, so two models never compete for the same memory."""
+        """Load `key` if needed. Every other model in this worker is unloaded first, so two
+        models never compete for the same memory (worker config exclusive_models: false keeps them)."""
         with self.lock:
-            if self.cfg.get("exclusive_models"):
+            if self.cfg.get("exclusive_models", True):
                 for k in [k for k in self.loaded if k != key]:
                     self.unload(k)
             return self.get(key)
@@ -159,6 +165,9 @@ class JobRunner:
     def _run(self, job: Job) -> None:
         req, r = job.req, job.result
         try:
+            if req.image_b64:              # an operator upload: write it out before the clock starts
+                req.image_path = str(save_upload(req.image_b64, Path(self.cfg["results_dir"]), req.run_id))
+                req.image_b64 = None
             r.status = "loading"
             t = time.perf_counter()
             backend = self.models.ensure(req.model)
@@ -215,8 +224,59 @@ def _request_settings(req: JobRequest) -> dict:
     if req.task == "layout":
         return {"room_type": req.room_type, "max_objects": req.max_objects, "streams": req.streams,
                 "max_tokens": req.max_tokens, "temperature": req.temperature, "seed": req.seed,
-                "repeat_until_budget": req.repeat_until_budget}
+                "repeat_until_budget": req.repeat_until_budget,
+                **({"repairs": req.repairs, "review_rounds": req.review_rounds}
+                   if req.repairs or req.review_rounds else {}),
+                **({"layout_prompt": req.layout_prompt} if req.layout_prompt else {})}
     return {"length_s": req.length_s, "seed": req.seed, "repeat_until_budget": req.repeat_until_budget}
+
+
+def save_upload(b64: str, results_dir: Path, run_id: str) -> Path:
+    """An uploaded input image (already checked and normalised by the conductor) -> a PNG file."""
+    import base64
+    import binascii
+    import re
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", run_id):     # it becomes a file name
+        raise ValueError("run_id may hold only letters, digits, - and _")
+    try:
+        data = base64.b64decode(b64, validate=True)
+    except (binascii.Error, ValueError) as e:
+        raise ValueError("image_b64 is not valid base64") from e
+    if len(data) > 20 * 2**20 or not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("image_b64 must be a PNG of at most 20 MB")
+    d = results_dir / "inputs"
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / f"{run_id}.png"
+    path.write_bytes(data)
+    return path
+
+
+def memory_report() -> dict:
+    """This worker's resident memory (itself plus children such as llama-server) and what the
+    machine has free. VRAM only when this process already uses CUDA (asking would create a context)."""
+    import sys
+
+    import psutil
+    out: dict = {}
+    try:
+        p = psutil.Process()
+        rss = p.memory_info().rss
+        for ch in p.children(recursive=True):
+            try:
+                rss += ch.memory_info().rss
+            except psutil.Error:
+                pass
+        out["rss_mb"] = round(rss / 2**20)
+        out["ram_free_mb"] = round(psutil.virtual_memory().available / 2**20)
+    except psutil.Error:
+        pass
+    torch = sys.modules.get("torch")
+    try:
+        if torch is not None and torch.cuda.is_available() and torch.cuda.is_initialized():
+            out["vram_free_mb"] = round(torch.cuda.mem_get_info()[0] / 2**20)
+    except Exception:  # noqa: BLE001 — a report, never a failure
+        pass
+    return out
 
 
 def _short(e: BaseException) -> str:
@@ -281,12 +341,14 @@ def create_app(cfg: dict) -> FastAPI:
 
     app = FastAPI(title=f"arcdemo worker {cfg['machine']}", dependencies=[Depends(auth)], lifespan=lifespan)
 
+    def is_busy() -> bool:
+        return runner.active is not None and runner.active.result.status not in TERMINAL
+
     @app.get("/health", response_model=HealthInfo)
     def health() -> HealthInfo:
-        busy = runner.active is not None and runner.active.result.status not in TERMINAL
         return HealthInfo(machine=cfg["machine"], tasks=cfg["tasks"], mock=bool(cfg.get("mock")),
-                          busy=busy, loaded=list(models.loaded), loading=models.loading,
-                          env_hash=env_cache["env_hash"], available=available())
+                          busy=is_busy(), loaded=list(models.loaded), loading=models.loading,
+                          env_hash=env_cache["env_hash"], available=available(), **memory_report())
 
     disk = {"at": 0.0, "keys": []}
 
@@ -321,8 +383,13 @@ def create_app(cfg: dict) -> FastAPI:
 
     @app.post("/unload")
     def unload(body: Optional[dict] = None) -> dict:
-        models.unload((body or {}).get("model"))
-        return {"loaded": list(models.loaded)}
+        """{model}: that model; {keep_task}: every model of the other tasks; {}: everything.
+        Refused while a job runs: it would pull the model out from under it."""
+        if is_busy():
+            raise HTTPException(409, "busy")
+        body = body or {}
+        gone = models.unload(body.get("model"), keep_task=body.get("keep_task"))
+        return {"unloaded": gone, "loaded": list(models.loaded), **memory_report()}
 
     @app.post("/jobs", response_model=JobResult)
     def submit(req: JobRequest) -> JobResult:

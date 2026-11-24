@@ -81,6 +81,29 @@ def test_exclusive_models_never_holds_two(tmp_path):
         assert c.get("/health").json()["loaded"] == ["sd35-medium-t5int8"]
 
 
+def test_unload_keep_task_frees_the_other_tasks_only(tmp_path):
+    with client("dgx", 0.02, tmp_path) as c:
+        c.post("/unload", json={})                          # drop the preload, start from nothing
+        assert run(c, {**T2I, "model": "sd15"})["status"] == "ok"
+        assert run(c, {"task": "i23d", "model": "sf3d", "input_id": "i23d-01",
+                       "image_path": "data/i23d/inputs/i23d-01.png"})["status"] == "ok"
+        # exclusive by default: loading sf3d already dropped sd15 in this one worker
+        assert c.get("/health").json()["loaded"] == ["sf3d"]
+        r = c.post("/unload", json={"keep_task": "i23d"}).json()
+        assert r["unloaded"] == [] and r["loaded"] == ["sf3d"]
+        r = c.post("/unload", json={"keep_task": "layout"}).json()
+        assert r["unloaded"] == ["sf3d"] and r["loaded"] == []
+        h = c.get("/health").json()
+        assert h["rss_mb"] > 0 and h["ram_free_mb"] > 0      # shown in the operator's table
+
+
+def test_unload_is_refused_while_a_job_runs(tmp_path):
+    with client("cpu", 1.0, tmp_path) as c:
+        first = c.post("/jobs", json={**T2I, "steps": 50}).json()
+        assert c.post("/unload", json={"keep_task": "llm"}).status_code == 409
+        c.post(f"/jobs/{first['run_id']}/cancel")
+
+
 def test_second_job_while_busy_is_rejected(tmp_path):
     with client("cpu", 1.0, tmp_path) as c:
         first = c.post("/jobs", json={**T2I, "steps": 50}).json()
@@ -139,3 +162,75 @@ def test_layout_without_floor_plan_is_an_error(tmp_path):
     with client("cpu", 0.02, tmp_path) as c:
         res = run(c, {**ROOM, "floor_plan": None})
     assert res["status"] == "error" and "floor_plan" in res["message"]
+
+
+# ---------------------------------------------------------------- layout self-correction ------
+def mistakes_client(tmp_path: Path) -> TestClient:
+    """A mock layout worker that writes its first object twice: an overlap to fix."""
+    cfg = load_worker_config(str(CONFIG / "worker-mock-dgx.yaml"), ["layout"])
+    cfg.update(mock_speed=0.01, results_dir=str(tmp_path), mock_layout_mistakes=True)
+    return TestClient(create_app(cfg))
+
+
+def test_layout_mistake_is_only_flagged_without_self_correction(tmp_path):
+    with mistakes_client(tmp_path) as c:
+        res = run(c, ROOM)
+    objs = res["objects"]
+    assert objs[1]["issues"] == ["overlap"] and "history" not in objs[1]
+    assert "repairs" not in res["settings"]
+
+
+def test_layout_repair_rewrites_the_flagged_line_at_once(tmp_path):
+    import json
+    with mistakes_client(tmp_path) as c:
+        res = run(c, {**ROOM, "repairs": 2})
+    assert res["status"] == "ok" and res["settings"]["repairs"] == 2
+    objs = res["objects"]
+    bad = objs[1]
+    assert [h["op"] for h in bad["history"]] == ["place", "repair"]
+    assert bad["history"][0]["issues"] == ["overlap"] and bad["issues"] == [] and bad["fixes"] == 1
+    assert bad["history"][1]["t"] >= bad["t"]
+    assert all(not o["issues"] for o in objs) and len(objs) == ROOM["max_objects"]
+    assert [o["i"] for o in objs] == list(range(len(objs)))       # the room went on after the repair
+    saved = json.loads((tmp_path / res["outputs"][0]).read_text())
+    s = saved["summary"]
+    # every problem of the first pass was fixed (the repaired copy can push a later mock object into trouble too)
+    assert s["first_flagged"] >= 1 and s["fixed"] == s["first_flagged"]
+    assert (s["clean"], s["removed"]) == (len(objs), 0)
+    assert "[repair]" in saved["raw"]
+
+
+def test_layout_review_fixes_the_finished_room(tmp_path):
+    import json
+    with mistakes_client(tmp_path) as c:
+        res = run(c, {**ROOM, "review_rounds": 2})
+    objs = res["objects"]
+    live = [o for o in objs if o.get("removed") is None]
+    assert all(not o["issues"] for o in live)
+    bad = objs[1]
+    assert bad["history"][0]["issues"] == ["overlap"] and bad["history"][-1]["op"] in ("move", "remove")
+    saved = json.loads((tmp_path / res["outputs"][0]).read_text())
+    assert "[review]" in saved["raw"] and saved["summary"]["first_flagged"] == 1
+
+
+def test_uploaded_image_is_checked_before_it_is_saved(tmp_path):
+    import base64
+
+    from arcdemo.worker.app import save_upload
+    good = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"x" * 10).decode()
+    assert save_upload(good, tmp_path, "abc123").read_bytes().startswith(b"\x89PNG")
+    with pytest.raises(ValueError, match="PNG"):
+        save_upload(base64.b64encode(b"GIF89a").decode(), tmp_path, "abc")
+    with pytest.raises(ValueError, match="run_id"):
+        save_upload(good, tmp_path, "../../evil")
+    with pytest.raises(ValueError, match="base64"):
+        save_upload("***", tmp_path, "abc")
+
+
+def test_layout_with_layoutgpt_prompt_places_objects_from_css_lines(tmp_path):
+    with client("dgx", 0.02, tmp_path) as c:
+        res = run(c, {**ROOM, "layout_prompt": "layoutgpt", "max_tokens": 800})
+    assert res["status"] == "ok" and res["settings"]["prompt"] == "layoutgpt"
+    assert res["settings"]["layout_prompt"] == "layoutgpt"
+    objs = res["objects"]
+    assert objs and all(o["css"].endswith("m;}") and "written_size" in o for o in objs)

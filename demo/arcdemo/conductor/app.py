@@ -44,6 +44,11 @@ class SegmentBody(BaseModel):
     segment_id: str
 
 
+class UploadBody(BaseModel):
+    name: str = "picture"
+    data_url: str           # data:image/...;base64,... (the browser's FileReader), up to ~14 MB
+
+
 class ModelPickBody(BaseModel):
     task: str
     machine: str
@@ -144,7 +149,7 @@ def create_app(cfg: DemoConfig) -> FastAPI:
         if seg["task"] == "layout":
             mids = [m["id"] for m in cfg.machines]
             s = cond.settings("layout", seg["protocol"], mids[0]) if mids else {}
-            return {"task": "layout", "text": layout_prompt_text(item, s.get("max_objects"))}
+            return {"task": "layout", "text": layout_prompt_text(item, s.get("max_objects"), s.get("layout_prompt"))}
         if seg["task"] == "llm":
             from ..worker.backends.llm import SYSTEM
             return {"task": "llm", "text": f"=== system ===\n{SYSTEM}\n\n=== user ===\n{item.get('prompt', '')}"}
@@ -161,6 +166,35 @@ def create_app(cfg: DemoConfig) -> FastAPI:
             raise HTTPException(400, str(e))
         except RuntimeError as e:
             raise HTTPException(409, str(e))
+
+    @app.get("/api/i23d/spec")
+    def upload_spec() -> dict:
+        """What an uploaded picture must be like (shown next to the upload box)."""
+        from ..imageprep import INPUT_SPEC, cutout_model_path
+        return {"spec": [{"what": a, "rule": b} for a, b in INPUT_SPEC],
+                "cutout_installed": cutout_model_path() is not None}
+
+    @app.post("/api/i23d/upload")
+    async def upload(body: UploadBody) -> dict:
+        """An operator's picture for image-to-3D: checked, cut out and normalised here, once, so every
+        machine gets the same input. 422 with the reason when it cannot be used."""
+        import base64
+        import binascii
+
+        from ..imageprep import MAX_BYTES, Rejected
+        head, _, b64 = body.data_url.partition(",")
+        if not head.startswith("data:") or ";base64" not in head:
+            raise HTTPException(400, "expected a data URL (data:image/...;base64,...)")
+        if len(b64) > MAX_BYTES * 4 // 3 + 16:
+            raise HTTPException(422, f"The file is larger than {MAX_BYTES // 2**20} MB.")
+        try:
+            data = base64.b64decode(b64, validate=True)
+        except (binascii.Error, ValueError):
+            raise HTTPException(400, "the picture is not valid base64")
+        try:   # the cut-out takes a second or two: keep the conductor's loop (health, rounds) running
+            return await asyncio.to_thread(cond.add_upload, body.name, data)
+        except Rejected as e:
+            raise HTTPException(422, str(e))
 
     @app.post("/api/prepare")
     async def prepare(body: SegmentBody) -> dict:

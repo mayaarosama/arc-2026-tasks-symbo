@@ -11,7 +11,7 @@ For each object in data/i23d/stage_objects.json:
     python scripts/prepare_gso.py --candidates    # also render every alternate into a contact sheet
                                                   # data/i23d/candidates.png, to pick objects from
 
-Needs: trimesh, pyrender (offscreen OpenGL: works on a desktop; on headless Linux set
+Needs: trimesh, pyrender (requirements/gso.txt, two-step install; offscreen OpenGL works on a desktop; on headless Linux set
 PYOPENGL_PLATFORM=egl). Run it once on the operator laptop and copy data/i23d/ to every machine.
 """
 import argparse

@@ -67,15 +67,17 @@ def layout_view(item: dict) -> dict:
     return {"walls": ends, "door_wall": door, "ask": ask}
 
 
-def layout_prompt_text(item: dict, max_objects: Optional[int] = None) -> str:
-    """The exact chat the model receives for this room, as plain text for the operator page."""
-    from ..layout_prompt import PROMPT_VERSION, grammar, messages
+def layout_prompt_text(item: dict, max_objects: Optional[int] = None, style: Optional[str] = None) -> str:
+    """The exact chat the model receives for this room, as plain text for the operator page.
+    style: None / "v3.1" (ours) or "layoutgpt" (LayoutGPT's prompt, layout_prompt.py)."""
+    from ..layout_prompt import PROMPT_VERSION, css_grammar, grammar, layoutgpt_messages, messages
     spec = {"room_type": item["room_type"], "floor_plan": item["floor_plan"], "door": item.get("door"),
             "max_objects": int(max_objects or item.get("max_objects") or 10)}
-    parts = [f"# prompt {PROMPT_VERSION}"]
-    for m in messages(spec):
+    gpt = style == "layoutgpt"
+    parts = ["# prompt layoutgpt (LayoutGPT, k-similar example rooms)" if gpt else f"# prompt {PROMPT_VERSION}"]
+    for m in (layoutgpt_messages(spec) if gpt else messages(spec)):
         parts += ["", f"=== {m['role']} ===", m["content"].rstrip()]
-    parts += ["", "=== grammar (constrains the reply's syntax only) ===", grammar(spec)]
+    parts += ["", "=== grammar (constrains the reply's syntax only) ===", css_grammar(spec) if gpt else grammar(spec)]
     return "\n".join(parts)
 
 
@@ -84,9 +86,14 @@ def _layout_summary(objects: Optional[list]) -> Optional[dict]:
     if not objects:
         return None
     last = max(o.get("room", 0) for o in objects)
-    room = [o for o in objects if o.get("room", 0) == last]
+    every = [o for o in objects if o.get("room", 0) == last]
+    room = [o for o in every if o.get("removed") is None]
     flagged = sum(1 for o in room if o.get("issues"))
-    return {"objects": len(room), "flagged": flagged}
+    out = {"objects": len(room), "flagged": flagged}
+    if any("history" in o for o in every):      # self-correction: the first pass and the fixes kept
+        out.update(first_flagged=sum(1 for o in every if (o.get("history") or [o])[0].get("issues")),
+                   fixes=sum(o.get("fixes", 0) for o in every))
+    return out
 
 
 class Conductor:
@@ -104,12 +111,18 @@ class Conductor:
         self.health: dict[str, dict] = {}
         self.prepare_state: dict[str, dict] = {}
         self._tasks: dict[str, asyncio.Task] = {}
+        self._prepare_task: Optional[asyncio.Task] = None
         self._round_done = asyncio.Event()
         self.log_path = cfg.session_dir / "runs.jsonl"
         # The operator's model picks, {task: {machine: model}}; none = the planned model.
         # Kept in picks_path (the web app passes one) so a conductor restart keeps them.
         self.picks_path = picks_path
         self.model_picks: dict[str, dict[str, str]] = self._load_picks()
+        # Operator uploads for image-to-3D: session_dir/uploads/<id>.png (+ the original), listed in
+        # uploads.json so a conductor restart still offers them.
+        self.uploads_dir = cfg.session_dir / "uploads"
+        for item in self._load_uploads():
+            cfg.add_input("i23d", item)
 
     # ================================================================== model picks =======
     def settings(self, task: str, protocol: str, mid: str) -> dict[str, Any]:
@@ -166,6 +179,41 @@ class Conductor:
             self.picks_path.write_text(json.dumps(self.model_picks, indent=1), encoding="utf-8")
         return self.model_picks
 
+    # ================================================================== uploads ===========
+    def _load_uploads(self) -> list[dict]:
+        index = self.uploads_dir / "uploads.json"
+        try:
+            items = json.loads(index.read_text(encoding="utf-8")) if index.exists() else []
+        except (OSError, ValueError):
+            log.warning("ignoring unreadable %s", index)
+            return []
+        return [x for x in items if (self.cfg.session_dir / x.get("upload", "-")).is_file()]
+
+    def add_upload(self, name: str, data: bytes) -> dict:
+        """Check, cut out and normalise an operator's picture (arcdemo/imageprep.py), and offer it as an
+        image-to-3D input. Raises imageprep.Rejected with the reason. -> the input item + warnings"""
+        import hashlib
+        import re
+
+        from ..imageprep import prepare
+        prep = prepare(data)
+        digest = hashlib.sha1(data).hexdigest()[:10]
+        self.uploads_dir.mkdir(parents=True, exist_ok=True)
+        (self.uploads_dir / f"{digest}.png").write_bytes(prep.png)
+        ext = (Path(name).suffix.lower() if Path(name).suffix.lower() in (".png", ".jpg", ".jpeg", ".webp") else ".bin")
+        (self.uploads_dir / f"{digest}-original{ext}").write_bytes(data)
+        label = re.sub(r"[^\w .()-]+", " ", Path(name).stem).strip()[:40] or "Uploaded picture"
+        item = {"id": f"up-{digest}", "label": label, "tier": "upload",
+                "exposes": "An operator's own picture: live only (no recording, no reference mesh)",
+                "upload": f"uploads/{digest}.png", "input_url": f"{MEDIA_SESSION}/uploads/{digest}.png",
+                "original_url": f"{MEDIA_SESSION}/uploads/{digest}-original{ext}",
+                "seed": int(digest[:6], 16), "cutout": prep.cutout, "original_size": list(prep.original_size)}
+        self.cfg.add_input("i23d", item)
+        uploads = [x for x in self._load_uploads() if x["id"] != item["id"]] + [item]
+        (self.uploads_dir / "uploads.json").write_text(json.dumps(uploads, indent=1), encoding="utf-8")
+        log.info("upload %s (%s, %s x %s, cut-out %s)", item["id"], label, *prep.original_size, prep.cutout)
+        return {**item, "warnings": prep.warnings}
+
     # ================================================================== public state ======
     def state(self) -> dict:
         return {"server_now": time.time(), "view": self.view, "round": self.round,
@@ -219,31 +267,55 @@ class Conductor:
             log.warning("%s failed: %s %s", what, type(e).__name__, url)
 
     # ================================================================== prepare ===========
+    async def _free_others(self, mid: str, task: str) -> tuple[bool, list[str]]:
+        """Unload every model of the other tasks from all of `mid`'s workers (one POST per worker
+        URL: a worker may serve several tasks), so the RAM / VRAM is free before `task` loads.
+        Skipped for machines with keep_other_tasks: true. -> (some worker busy, models unloaded)"""
+        m = self.cfg.machine(mid)
+        if m.get("keep_other_tasks"):
+            return False, []
+        busy, gone = False, []
+        for ourl in dict.fromkeys((m.get("workers") or {}).values()):
+            try:
+                r = await self.http.post(f"{ourl}/unload", json={"keep_task": task}, timeout=60)
+                if r.status_code == 409:
+                    busy = True             # a run is still ending there: unload it once idle
+                    continue
+                r.raise_for_status()
+                gone += r.json().get("unloaded", [])
+            except httpx.HTTPError as e:    # a worker that is down holds no memory: not a blocker
+                log.warning("unload on %s failed: %s %s", mid, type(e).__name__, ourl)
+        if gone:
+            log.info("prepare: %s freed %s", mid, ", ".join(gone))
+        return busy, gone
+
     async def prepare(self, segment_id: str) -> dict:
-        """Load each machine's model for a segment, off the clock. On machines flagged
-        one_task_at_a_time, first unload the other task's worker (16 GB VRAM / RAM)."""
+        """Load each machine's model for a segment, off the clock. First, on every machine, unload
+        the models of every other task (keep_other_tasks: true on a machine keeps them), so only
+        this task's model is in memory."""
         seg = self.cfg.segment(segment_id)
         task, protocol = seg["task"], seg["protocol"]
         for m in self.cfg.machines:
             mid = m["id"]
             s = self.settings(task, protocol, mid)
             if s.get("mode") == "replay" or s.get("prepare") is False:
-                self.prepare_state[mid] = {"status": "skipped", "model": s["model"]}
+                _, gone = await self._free_others(mid, task)   # nothing runs here live: free it all the same
+                self.prepare_state[mid] = {"status": "skipped", "model": s["model"], "freed": gone}
                 continue
             if self.on_disk(mid, task, s["model"]) is False:
-                self.prepare_state[mid] = {"status": "missing", "model": s["model"],
+                _, gone = await self._free_others(mid, task)
+                self.prepare_state[mid] = {"status": "missing", "model": s["model"], "freed": gone,
                                            "message": f"{self.cfg.model_label(s['model'])} is not downloaded on this machine"}
                 log.warning("prepare %s: %s does not have %s on disk", segment_id, mid, s["model"])
                 continue
             url = self.cfg.worker_url(mid, task)
             try:
-                if m.get("one_task_at_a_time"):
-                    for other, ourl in (m.get("workers") or {}).items():
-                        if other != task and ourl != url:
-                            await self._post_quiet(f"{ourl}/unload", f"unload {mid}:{other}")
-                r = await self.http.post(f"{url}/load", json={"model": s["model"]})
-                self.prepare_state[mid] = {"status": "loading", "model": s["model"], "since": time.time()}
-                if r.status_code == 409:      # still finishing the run just stopped: load once it is idle
+                self.prepare_state[mid] = {"status": "loading", "model": s["model"], "since": time.time(),
+                                           "freed": []}
+                busy, gone = await self._free_others(mid, task)
+                self.prepare_state[mid]["freed"] = gone
+                r = None if busy else await self.http.post(f"{url}/load", json={"model": s["model"]})
+                if busy or r.status_code == 409:   # still finishing the run just stopped: load once idle
                     self.prepare_state[mid]["message"] = "waiting for the last run to stop"
                     self.prepare_state[mid]["_retry"] = True
                     log.info("prepare %s: %s busy, will load %s when idle", segment_id, mid, s["model"])
@@ -255,7 +327,9 @@ class Conductor:
                        else f"the machine is not reachable ({type(e).__name__})")
                 self.prepare_state[mid] = {"status": "error", "model": s["model"], "message": why}
                 log.warning("prepare %s: %s could not start loading %s: %s", segment_id, mid, s["model"], e)
-        asyncio.create_task(self._watch_prepare(task))
+        if self._prepare_task and not self._prepare_task.done():
+            self._prepare_task.cancel()   # Load pressed again: one watcher, or two would both retry /load
+        self._prepare_task = asyncio.create_task(self._watch_prepare(task))
         return self.prepare_state
 
     async def _watch_prepare(self, task: str, timeout: float = 900) -> None:
@@ -272,6 +346,10 @@ class Conductor:
                     if h.get("busy"):
                         continue                  # a run is still stopping: not ready, not failed
                     if p.get("_retry"):
+                        busy, gone = await self._free_others(mid, task)
+                        p["freed"] = p.get("freed", []) + gone
+                        if busy:
+                            continue              # another task's worker on this machine is still ending
                         r = await self.http.post(f"{url}/load", json={"model": p["model"]})
                         if r.status_code == 409:
                             continue
@@ -322,6 +400,9 @@ class Conductor:
         ms = [m for m in self.cfg.machines if not machines or m["id"] in machines]
         rid = time.strftime("%H%M%S-") + uuid.uuid4().hex[:6]
         caption = (seg.get("caption") or "").replace("{budget}", f"{budget:g}" if budget else "")
+        if item.get("tier") == "upload" and task == "i23d":   # the segment's caption may promise a score
+            caption = (caption + " This picture was brought today: there is no scanned original, "
+                       "so no error is measured.").strip()
         self.round = {
             "id": rid, "segment_id": segment_id, "title": seg["title"], "caption": caption,
             "task": task, "protocol": protocol, "budget_seconds": budget, "warmup": bool(seg.get("warmup")),
@@ -547,7 +628,11 @@ class Conductor:
         if task == "t2i":
             job["prompt"] = item["prompt"]
         elif task == "i23d":
-            job["image_path"] = item["input"]
+            if item.get("upload"):     # an operator upload: the workers do not have it, so send the picture
+                import base64
+                job["image_b64"] = base64.b64encode((self.cfg.session_dir / item["upload"]).read_bytes()).decode()
+            else:
+                job["image_path"] = item["input"]
         elif task == "music":
             job.update(prompt=item.get("prompt"), mode=item.get("mode"), audio_path=item.get("audio"),
                        length_s=s.get("length_s", item.get("length_s")))

@@ -1,8 +1,9 @@
 # LLM worker env (every machine): no torch. The model runs inside llama.cpp's llama-server, which
 # the worker starts as a child process (arcdemo/worker/backends/llm.py).
 # Install ONE llama.cpp release on every machine (same tag, so the comparison only changes hardware),
-# unpacked so the binary is at third_party/llama.cpp/bin/llama-server(.exe):
-#   https://github.com/ggml-org/llama.cpp/releases  ->  CUDA build for GPU machines, CPU build for the CPU box
-# Record the tag here once chosen; `llama-server --version` is echoed into every run record.
-#   llama.cpp release: TBC
+# so the binary is at third_party/llama.cpp/bin/llama-server(.exe); `llama-server --version` is
+# echoed into every run record.
+#   llama.cpp release: b12608
+#   GPU machines: built with CUDA by scripts/gpu/setup_gpu_machine.sh
+#   CPU box:      llama.cpp's prebuilt CPU build, fetched by scripts/cpu/fetch_llama_cpp.py (Windows, Linux x64)
 -r worker-base.txt
