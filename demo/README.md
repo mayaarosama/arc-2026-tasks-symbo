@@ -115,6 +115,16 @@ bash scripts/gpu/setup_gpu_machine.sh --machine workstation    # or --machine dg
 #   --conductor  also start the conductor here   --no-pull   skip git pull
 ```
 
+**Workstation alone, GPU + CPU on one box: one command** (after the setup above):
+
+```bash
+bash scripts/gpu/start_workstation_show.sh     # GPU :8101–8105, CPU :8201–8205, conductor :8000
+#   --no-cpu  GPU workers + conductor only        --stop  stop all of it
+```
+
+Operator: `http://localhost:8000/operator`, stage: `http://localhost:8000/stage`. Logs in `results/`
+and `results-cpu/`. Safe to re-run: it stops what it started, then starts everything again.
+
 It sets up the venvs and llama.cpp. Before each download it checks free disk and GPU memory
 (`scripts/gpu/plan_downloads.py`) and skips any model that doesn't fit. It then runs the offline
 check for the show and the full matrix, and starts the workers. Every step reuses what is already
@@ -238,6 +248,9 @@ What makes a good picture (also under *What makes a good picture* on the page):
 | Light | Even and soft; no hard shadows, glare or strong reflections | Light is baked into the texture: a shadow becomes dark paint |
 | Avoid | Glass and see-through objects, mirrors, thin wires or hair, text-heavy surfaces, people, several objects | Known SF3D failure cases; people also raise consent questions |
 
+To bring a picture to the size and format first (upright, shortest side 512 px, PNG under 10 MB):
+`python scripts/fit_upload.py IMG_2089.jpeg` writes `IMG_2089-fit.png`. It cannot fix the content.
+
 Refused with a reason on the page: files that are not PNG/JPEG/WebP or are over 10 MB, pictures
 under 256 px, a cut-out that finds no object or keeps almost the whole picture, and an object
 touching the edge.
@@ -252,6 +265,10 @@ already have a transparent background work, and the page says so.
 The language model places furniture on a floor plan, one line per object. The stage shows what the
 model was asked, what it writes, and the room it builds. Background: `Task 8 — Scene construction.md`
 and `docs/Task 8 — Layout model review.md`.
+
+Assets: the 3D furniture is the Kenney Furniture Kit (CC0, 25 `.glb` files) in
+`arcdemo/conductor/static/assets/furniture/`, served by the conductor, so there is nothing to download.
+The rooms and the prompt's worked examples are in `data/layout/` (`stage_rooms.json`, `exemplars.json`).
 
 **On a laptop with the real model** (CPU; uses the Task 4 weights and llama.cpp, see 1b):
 
@@ -307,6 +324,6 @@ logs when it dispatches, so one grep follows a cell end to end.
 | `config/` | `demo.yaml` (single-model show), `demo-full.yaml` (largest model per machine), `models.yaml`, one worker config per machine |
 | `data/` | stage prompts, rehearsal prompts (PartiPrompts), GSO inputs + ground truth, music inputs, LLM prompts |
 | `scripts/` | download, verify offline, prepare GSO, rehearse, mock dry-run |
-| `scripts/gpu/` | GPU machines (Linux): `setup_gpu_machine.sh --machine workstation\|dgx` (every setup step, then the workers; report in `results/`), `plan_downloads.py` (disk + GPU-memory check, then download) |
+| `scripts/gpu/` | GPU machines (Linux): `setup_gpu_machine.sh --machine workstation\|dgx` (every setup step, then the workers; report in `results/`), `start_workstation_show.sh` (GPU + CPU workers + conductor on one box), `plan_downloads.py` (disk + GPU-memory check, then download) |
 | `scripts/cpu/` | CPU box: `cpu_box_linux.sh`, `cpu_box_windows.ps1` (setup / start / status / stop; workers :8101–8103), `check_cpu.py` |
 | `third_party/` | `stable-fast-3d`, `stable-audio-3` (git clones; not pip packages) |
