@@ -10,3 +10,4 @@ data/i23d/gso_cache/
 third_party/
 hf-cache/
 weights/
+config.txt
