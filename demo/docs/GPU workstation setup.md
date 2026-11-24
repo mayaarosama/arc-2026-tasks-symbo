@@ -385,9 +385,8 @@ Open `http://<laptop>:8000/operator`. Its *Workers* panel should show the workst
 
 | Part | Segment | Task | Workstation runs |
 | --- | --- | --- | --- |
-| Three machines, one task / The stopwatch / Same minute, different results / Your prompt | seg0, seg1, seg2, seg4 | t2i | SD 1.5, 512 × 512, 30 steps, batch 4 |
+| Three machines, one task / The stopwatch / Same minute, different results | seg0, seg1, seg2 | t2i | SD 1.5, 512 × 512, 30 steps, batch 4 |
 | The same test in 3D | seg3 | i23d | SF3D, 1024 texture |
-| Music in a minute (reserve) | seg5 | music | Stable Audio 3 Small, 30 s clips |
 | Same answer, different time / Tokens in a minute | seg6, seg7 | llm | Qwen3.5 4B, 1 then 8 streams |
 | Furnish the room / Rooms in a minute | seg8, seg9 | layout | Qwen3.5 4B, 1 then 8 rooms |
 

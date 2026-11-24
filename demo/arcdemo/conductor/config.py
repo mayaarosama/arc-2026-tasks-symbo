@@ -107,7 +107,8 @@ class DemoConfig:
     def settings(self, task: str, protocol: str, mid: str, model: Optional[str] = None) -> dict[str, Any]:
         """The planned settings for one cell. `model` (the operator's pick) replaces the planned
         model and applies that model's own settings from model_choices (resolution, steps...);
-        the protocol's keys (streams, temperature, budget behaviour) stay as planned."""
+        the protocol's keys (streams, temperature, budget behaviour) stay as planned, and so do
+        the keys the block lists under keep_for_any_model."""
         block = (self.raw.get("settings") or {}).get(task, {}).get(protocol)
         if block is None:
             raise KeyError(f"no settings for {task}/{protocol}")
@@ -115,7 +116,8 @@ class DemoConfig:
         if "model" not in merged:
             raise KeyError(f"settings {task}/{protocol}/{mid} name no model")
         if model and model != merged["model"]:
-            merged = {**merged, **self.choices.get(task, {}).get(model, {}), "model": model}
+            kept = {k: merged[k] for k in block.get("keep_for_any_model", []) if k in merged}
+            merged = {**merged, **self.choices.get(task, {}).get(model, {}), "model": model, **kept}
         return merged
 
     def model_options(self, task: str) -> list[str]:

@@ -70,10 +70,9 @@ settings:
   t2i:
     iso_quality:   # identical everywhere: same seed -> same image, only the clock differs
       all: {model: sd15, width: 512, height: 512, steps: 25, guidance: 7.5, batch: 8}
-    iso_time:      # same model; faster machines afford more images and more steps (TBC)
-      dgx:         {model: sd15, width: 512, height: 512, steps: 50, guidance: 7.5, batch: 8}
-      workstation: {model: sd15, width: 512, height: 512, steps: 30, guidance: 7.5, batch: 4}
-      cpu:         {model: sd15, width: 512, height: 512, steps: 15, guidance: 7.5, batch: 1}
+    iso_time:      # every machine is asked for the same images, size and steps; only what finishes differs
+      keep_for_any_model: [width, height, steps]   # a picked model keeps these (not its model_choices ones)
+      all:         {model: sd15, width: 512, height: 512, steps: 30, guidance: 7.5, batch: 4}
   i23d:
     iso_time:
       all:         {model: sf3d, texture_size: 1024}
@@ -171,20 +170,6 @@ segments:
     budget_seconds: 60
     inputs: [i23d-01, i23d-02, i23d-03]
     caption: "Same 3D model on every machine, {budget} seconds each. Error is measured against the scanned object."
-  - id: seg4
-    title: "Your prompt"
-    task: t2i
-    protocol: iso_time
-    budget_seconds: 60
-    inputs: [live]
-    caption: "Same model on every machine. Each did as much as it could finish in {budget} seconds."
-  - id: seg5                       # reserve: run only if the schedule allows
-    title: "Music in a minute"
-    task: music
-    protocol: iso_time
-    budget_seconds: 60
-    inputs: [mus-01, mus-02]       # mus-03 (continuation) waits for its seed clip
-    caption: "Same music model on every machine: complete 30-second tracks finished in {budget} seconds. Instrumental only."
   - id: seg6                       # task 4: language model race
     title: "Same answer, different time"
     task: llm

@@ -83,13 +83,13 @@ function buildRound(round) {
 function updateCellStatic(round, mid) {
   const c = round.cells[mid];
   const b = built.cells[mid];
-  const badge = c.mock && c.mode === "LIVE" ? "MOCK" : c.mode;
+  const finished = Demo.cellFinished(round, c);
+  const badge = c.mock && c.mode === "LIVE" ? "MOCK" : c.mode === "LIVE" && finished ? "FINISHED" : c.mode;
   b.badge.className = "badge " + badge;
   b.badge.textContent = badge === "PENDING" ? "…" : c.recorded ? "RECORDED" : badge;
   b.model.replaceChildren(document.createTextNode(c.model_label),
     el("span", "settings", "Expected: " + expectedOutput(round.task, c.settings, round.budget_seconds)));
 
-  const finished = Demo.cellFinished(round, c);
   const total = c.requested || c.settings.batch || 1;
   let res = "", cls = "result";
   if (c.recorded) {

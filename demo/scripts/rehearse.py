@@ -13,7 +13,7 @@
 
 Full runs (what the CPU shows on stage when its time is up, it is stopped, or it is down):
 
-    python scripts/rehearse.py --config config/demo.yaml --segments seg0,seg2,seg3,seg5 --full --repeat 1 --max-wait 14400
+    python scripts/rehearse.py --config config/demo.yaml --segments seg0,seg2,seg3 --full --repeat 1 --max-wait 14400
 
   runs only the machines flagged show_full_recording (override with --machines), with NO time
   limit, and saves each complete run to replay/<task>/<protocol>/<machine>/<input>/full/.

@@ -18,8 +18,7 @@ def test_shipped_configs_are_valid():
 
 def test_typo_in_settings_is_reported(tmp_path):
     raw = yaml.safe_load((ROOT / "config/demo.yaml").read_text(encoding="utf-8"))
-    raw["settings"]["t2i"]["iso_time"]["dgx"].update(model="sd35-largee", step=40)
-    raw["settings"]["t2i"]["iso_time"]["dgx"].pop("steps")
+    raw["settings"]["t2i"]["iso_time"]["dgx"] = {"model": "sd35-largee", "step": 40}
     p = tmp_path / "bad.yaml"
     p.write_text(yaml.safe_dump(raw), encoding="utf-8")
     with pytest.raises(ValueError) as e:
