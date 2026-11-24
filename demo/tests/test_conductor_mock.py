@@ -326,3 +326,100 @@ def test_on_disk_reads_the_hub_cache(tmp_path, monkeypatch):
     (tmp_path / "models--stabilityai--stable-fast-3d" / "snapshots" / "a" / "model.safetensors").write_text("x")
     assert not on_disk(sf3d, "sf3d")                           # its encoders are missing
     assert on_disk({"repo": "music-stub"})
+
+
+# ---------------------------------------------------------------- start right after Stop (409) ----
+def occupy(cfg: DemoConfig, mid: str, seconds: float) -> str:
+    """Keep a worker busy with a real job for `seconds` (a run that is still ending). -> run_id"""
+    url = cfg.worker_url(mid, "llm")
+    r = httpx.post(f"{url}/jobs", json={"task": "llm", "model": "qwen35-4b", "input_id": "busy", "prompt": "x",
+                                         "budget_seconds": seconds, "repeat_until_budget": True})
+    assert r.status_code == 200, r.text
+    rid = r.json()["run_id"]
+    end = time.time() + 10
+    while httpx.get(f"{url}/health").json()["busy"] is False:
+        assert time.time() < end, "the occupying job never started"
+        time.sleep(0.05)
+    return rid
+
+
+def test_start_while_last_run_still_ending_waits_then_runs_live(stack):
+    cfg, _ = stack
+    occupy(cfg, "workstation", 2.0)
+
+    async def go():
+        cond = Conductor(cfg)
+        await cond.refresh_health()
+        rnd = await cond.start_round("seg2", "t2i-01")       # the worker answers 409 at first
+        await cond.wait_round(60)
+        await cond.http.aclose()
+        return rnd
+
+    ws = asyncio.run(go())["cells"]["workstation"]
+    assert ws["mode"] == "LIVE" and ws["status"] == "ok", ws["note"]
+    assert ws["completed"] == ws["requested"]
+
+
+def test_start_gives_up_on_a_worker_that_stays_busy(stack):
+    cfg, _ = stack
+    rid = occupy(cfg, "workstation", 40.0)
+
+    async def go():
+        cond = Conductor(cfg)
+        await cond.refresh_health()
+        t0 = time.time()
+        rnd = await cond.start_round("seg2", "t2i-01")
+        await cond.wait_round(60)
+        await cond.http.aclose()
+        return rnd, time.time() - t0
+
+    try:
+        rnd, seconds = asyncio.run(go())
+    finally:
+        httpx.post(f"{cfg.worker_url('workstation', 'llm')}/jobs/{rid}/cancel")
+    ws = rnd["cells"]["workstation"]
+    assert ws["status"] == "unavailable" and "HTTP 409" in ws["note"], ws["note"]
+    assert seconds < 25                                       # ~15 s of retries, never a hang
+    assert rnd["cells"]["dgx"]["status"] == "ok"
+
+
+def test_prepare_while_last_run_still_ending_loads_once_idle(stack):
+    cfg, _ = stack
+    occupy(cfg, "workstation", 2.0)
+
+    async def go():
+        cond = Conductor(cfg)
+        prep = await cond.prepare("seg2")
+        first = dict(prep["workstation"])
+        end = time.time() + 20
+        while time.time() < end and any(p["status"] == "loading" for p in cond.prepare_state.values()):
+            await asyncio.sleep(0.2)
+        await cond.http.aclose()
+        return first, cond.prepare_state
+
+    first, final = asyncio.run(go())
+    assert first["status"] == "loading" and first["message"] == "waiting for the last run to stop"
+    ws = final["workstation"]
+    assert ws["status"] == "ready" and "message" not in ws and "_retry" not in ws, ws
+    assert final["dgx"]["status"] == "ready"
+
+
+def test_prepare_says_why_it_failed_and_times_out(stack):
+    cfg, procs = stack
+    procs["cpu"].terminate()
+    procs["cpu"].wait()
+
+    async def go():
+        cond = Conductor(cfg)
+        prep = await cond.prepare("seg2")
+        cpu = dict(prep["cpu"])
+        await cond._watch_prepare("t2i", timeout=0)           # let the real loads finish first
+        # a load that never completes (no error reported either): must not stay "loading" forever
+        cond.prepare_state["dgx"] = {"status": "loading", "model": "sd35-large", "since": time.time()}
+        await cond._watch_prepare("t2i", timeout=1.5)
+        await cond.http.aclose()
+        return cpu, cond.prepare_state["dgx"]
+
+    cpu, dgx = asyncio.run(go())
+    assert cpu["status"] == "error" and cpu["message"].startswith("the machine is not reachable"), cpu
+    assert dgx["status"] == "error" and dgx["message"].startswith("still not loaded after"), dgx

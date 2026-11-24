@@ -100,14 +100,12 @@ class LlmBackend(Backend):
             try:
                 run(i)
             except BaseException as e:  # noqa: BLE001 — re-raised on the job thread below
+                if ctx.should_stop():      # the stream was closed by the stop / bell: not a failure
+                    return
                 errors.append(e)
                 ctx.cancel.set()           # one failed stream stops the others
 
-        threads = [threading.Thread(target=guarded, args=(i,), daemon=True) for i in range(n)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        run_streams(self, ctx, n, guarded)
         if errors:
             raise errors[0]
         if r.tokens:   # the last output of an LLM run is its last token, not its last whole reply
@@ -115,7 +113,80 @@ class LlmBackend(Backend):
             r.tokens_per_second = round(r.tokens / last[0], 1)
 
 
+def run_streams(backend, ctx: JobContext, n: int, guarded) -> None:
+    """Run guarded(i) for n streams; when the job is stopped or the bell rings, close the open
+    llama-server streams at once. A stream waiting for its first token (a busy server, prompt
+    still being read) would otherwise hold the job for up to the 120 s read timeout."""
+    threads = [threading.Thread(target=guarded, args=(i,), daemon=True) for i in range(n)]
+    for t in threads:
+        t.start()
+    abort = getattr(backend, "_abort_streams", None)
+    for t in threads:
+        while t.is_alive():
+            if abort and ctx.should_stop():
+                abort()            # repeated: a stream opened just as the bell rang is closed too
+            t.join(0.2)
+
+
+class StreamAborted(Exception):
+    """Stop / bell while llama-server had not answered yet: the request was abandoned."""
+
+
+class _Pending:
+    """A request llama-server has not answered yet (still reading the prompt, or no free slot).
+    close() abandons it; see LlamaServer._open."""
+
+    def __init__(self) -> None:
+        self.closed = threading.Event()
+
+    def close(self) -> None:
+        self.closed.set()
+
+
 class LlamaServer(LlmBackend):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        # Open streams and unanswered requests, closed by _abort_streams on stop / bell. Made here,
+        # not lazily: the streams of one job call _chat at the same moment from several threads.
+        self._live: set = set()
+
+    def _abort_streams(self) -> None:
+        for item in list(self._live):
+            try:
+                item.close()
+            except Exception:  # noqa: BLE001 — closing is best effort
+                pass
+
+    def _open(self, body: dict):
+        """POST the chat request and return the streaming response once its headers arrive. The
+        wait for headers runs on a helper thread so _abort_streams can abandon it: without that a
+        Stop pressed before the server answers holds the job for the whole 120 s read timeout.
+        A server that answers after the Stop is hung up on at once, which also stops its slot."""
+        pending, box, done = _Pending(), {}, threading.Event()
+
+        def send() -> None:
+            try:
+                req = self.http.build_request("POST", "/v1/chat/completions", json=body)
+                box["resp"] = self.http.send(req, stream=True)
+            except BaseException as e:  # noqa: BLE001 — handed to the caller below
+                box["error"] = e
+            finally:
+                done.set()
+                if pending.closed.is_set() and "resp" in box:
+                    box["resp"].close()
+
+        self._live.add(pending)
+        try:
+            threading.Thread(target=send, daemon=True).start()
+            while not done.wait(0.05):
+                if pending.closed.is_set():
+                    raise StreamAborted("stopped before llama-server answered")
+        finally:
+            self._live.discard(pending)
+        if "error" in box:
+            raise box["error"]
+        return box["resp"]
+
     def load(self) -> None:
         import httpx
         from huggingface_hub import snapshot_download
@@ -208,7 +279,9 @@ class LlamaServer(LlmBackend):
                 "chat_template_kwargs": {"enable_thinking": False},   # stage shows answers, not reasoning
                 **extra}
         counted = 0
-        with self.http.stream("POST", "/v1/chat/completions", json=body) as resp:
+        resp = self._open(body)
+        self._live.add(resp)
+        try:
             resp.raise_for_status()
             for line in resp.iter_lines():
                 if not line.startswith("data: "):
@@ -226,6 +299,9 @@ class LlamaServer(LlmBackend):
                 if used is not None and used != counted:
                     yield "", used - counted   # reconcile with the server's own count
                     counted = used
+        finally:
+            self._live.discard(resp)
+            resp.close()
 
 
 class _ServerMemory:

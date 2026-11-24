@@ -46,7 +46,7 @@ from ...layout_prompt import (  # noqa: F401 — re-exported: tests and tools us
 )
 from ...schemas import JobRequest
 from .base import Backend, JobContext
-from .llm import LlamaServer
+from .llm import LlamaServer, run_streams
 
 
 def room_spec(req: JobRequest) -> dict:
@@ -139,15 +139,13 @@ class LayoutBackend(Backend):
             try:
                 run(i)
             except BaseException as e:  # noqa: BLE001 — re-raised on the job thread below
+                if ctx.should_stop():      # the stream was closed by the stop / bell: not a failure
+                    return
                 errors.append(e)
                 ctx.cancel.set()
 
         ctx.progress(step=0, steps=spec["max_objects"])
-        threads = [threading.Thread(target=guarded, args=(i,), daemon=True) for i in range(n)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        run_streams(self, ctx, n, guarded)
         if errors:
             raise errors[0]
         if r.tokens:

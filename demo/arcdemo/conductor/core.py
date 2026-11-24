@@ -242,11 +242,18 @@ class Conductor:
                         if other != task and ourl != url:
                             await self._post_quiet(f"{ourl}/unload", f"unload {mid}:{other}")
                 r = await self.http.post(f"{url}/load", json={"model": s["model"]})
-                r.raise_for_status()
                 self.prepare_state[mid] = {"status": "loading", "model": s["model"], "since": time.time()}
-                log.info("prepare %s: loading %s on %s", segment_id, s["model"], mid)
+                if r.status_code == 409:      # still finishing the run just stopped: load once it is idle
+                    self.prepare_state[mid]["message"] = "waiting for the last run to stop"
+                    self.prepare_state[mid]["_retry"] = True
+                    log.info("prepare %s: %s busy, will load %s when idle", segment_id, mid, s["model"])
+                else:
+                    r.raise_for_status()
+                    log.info("prepare %s: loading %s on %s", segment_id, s["model"], mid)
             except Exception as e:  # noqa: BLE001
-                self.prepare_state[mid] = {"status": "error", "model": s["model"], "message": type(e).__name__}
+                why = (f"the machine answered HTTP {e.response.status_code}" if isinstance(e, httpx.HTTPStatusError)
+                       else f"the machine is not reachable ({type(e).__name__})")
+                self.prepare_state[mid] = {"status": "error", "model": s["model"], "message": why}
                 log.warning("prepare %s: %s could not start loading %s: %s", segment_id, mid, s["model"], e)
         asyncio.create_task(self._watch_prepare(task))
         return self.prepare_state
@@ -259,8 +266,20 @@ class Conductor:
                 return
             for mid in pending:
                 url = self.cfg.worker_url(mid, task)
+                p = self.prepare_state[mid]
                 try:
                     h = (await self.http.get(f"{url}/health")).json()
+                    if h.get("busy"):
+                        continue                  # a run is still stopping: not ready, not failed
+                    if p.get("_retry"):
+                        r = await self.http.post(f"{url}/load", json={"model": p["model"]})
+                        if r.status_code == 409:
+                            continue
+                        r.raise_for_status()
+                        p.pop("_retry")
+                        p.pop("message", None)
+                        log.info("prepare: %s idle now, loading %s", mid, p["model"])
+                        continue
                     if self.prepare_state[mid]["model"] in h.get("loaded", []):
                         p = self.prepare_state[mid]
                         p.update(status="ready", seconds=round(time.time() - p["since"], 1))
@@ -273,6 +292,9 @@ class Conductor:
                 except Exception as e:  # noqa: BLE001 — keep watching; the worker may be restarting
                     log.warning("prepare: cannot reach %s: %s", mid, type(e).__name__)
             await asyncio.sleep(1)
+        for p in self.prepare_state.values():
+            if p["status"] == "loading":
+                p.update(status="error", message=f"still not loaded after {timeout / 60:g} minutes")
 
     # ================================================================== rounds ============
     async def start_round(self, segment_id: str, input_id: str, prompt: Optional[str] = None,
@@ -438,6 +460,10 @@ class Conductor:
         log.info("round %s | %s -> %s run_id=%s model=%s", rnd["id"], mid, url, job["run_id"][:6], job["model"])
         try:
             r = await self.http.post(f"{url}/jobs", json=job)
+            give_up = time.time() + 15        # Start right after Stop: the last run may still be ending
+            while r.status_code == 409 and time.time() < give_up and not cell.get("_operator_replay"):
+                await asyncio.sleep(0.5)
+                r = await self.http.post(f"{url}/jobs", json=job)
         except Exception as e:  # noqa: BLE001
             await self._fallback(rnd, mid, f"worker unreachable ({type(e).__name__})")
             return
