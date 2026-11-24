@@ -72,7 +72,7 @@ def test_round_completes_live_on_all_machines(stack):
     rnd = asyncio.run(one_round(cfg, "seg2", "t2i-01"))
     cells = rnd["cells"]
     assert {c["status"] for c in cells.values()} == {"ok"}, {m: c["note"] for m, c in cells.items()}
-    assert cells["dgx"]["completed"] == 8 and len(cells["dgx"]["outputs"]) == 8
+    assert all(c["completed"] == 4 and len(c["outputs"]) == 4 for c in cells.values())   # same batch everywhere
     assert all(Path(o["path"]).exists() for c in cells.values() for o in c["outputs"])
     log = (Path(cfg.session_dir) / "runs.jsonl").read_text().splitlines()
     assert len(log) == 3                                 # one measurement record per cell
@@ -107,7 +107,7 @@ def test_operator_model_pick_runs_on_that_machine_only(stack, tmp_path):
     rnd = asyncio.run(go())
     ws, dgx = rnd["cells"]["workstation"], rnd["cells"]["dgx"]
     assert ws["status"] == "ok", ws["note"]
-    assert ws["model"] == "sd35-medium-not5" and ws["settings"]["width"] == 1024
+    assert ws["model"] == "sd35-medium-not5" and ws["settings"]["width"] == 512   # seg2 keeps the size
     assert dgx["model"] == "sd15" and dgx["settings"]["width"] == 512
     log = [json.loads(x) for x in (Path(cfg.session_dir) / "runs.jsonl").read_text().splitlines()]
     assert {r["machine"]: r["model"] for r in log}["workstation"] == "sd35-medium-not5"

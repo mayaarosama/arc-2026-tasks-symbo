@@ -210,7 +210,7 @@ Projector: `/stage` full-screen (F11). Operator: `/operator`.
 ```bash
 python scripts/rehearse.py --segments seg0,seg2,seg3,seg3q --repeat 3    # prints the timing table
 python scripts/rehearse.py --segments seg1 --repeat 1 --max-wait 14400   # overnight: CPU iso-quality
-python scripts/rehearse.py --segments seg0,seg2,seg3,seg5 --full --repeat 1 --max-wait 14400   # CPU full runs
+python scripts/rehearse.py --segments seg0,seg2,seg3 --full --repeat 1 --max-wait 14400   # CPU full runs
 ```
 
 The median run per cell becomes its replay record in `replay/`. Change a setting in `config/demo.yaml`
