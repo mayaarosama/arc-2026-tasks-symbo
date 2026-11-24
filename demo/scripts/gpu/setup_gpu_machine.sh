@@ -27,7 +27,7 @@ set -uo pipefail
 
 DEMO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 REPO="$(cd "$DEMO/.." && pwd)"
-SECRETS="${SECRETS:-$DEMO/../config.txt}"
+SECRETS="${SECRETS:-$DEMO/./config.txt}"
 CU=https://download.pytorch.org/whl/cu128
 TORCH=2.7.1
 SF3D_DIR=third_party/stable-fast-3d
