@@ -202,3 +202,50 @@ Code:
 - `arcdemo/conductor/static/layout3d.js`: the 3D stage view, plus the assets and vendored three.js beside it.
 - `arcdemo/conductor/static/layout.js`: the fallback box view.
 - `scripts/sample_layout.py`: reruns this review.
+
+## Self-correction (24 November 2026)
+
+Segment seg8b "Furnish and fix" (`iso_quality+fix`: greedy, `repairs: 2`, `review_rounds: 3`). The model is told each problem in plain words and fixes it itself. The code never moves furniture, and an edit is kept only if it lowers the room cost. How it works: `Task 8 — Scene construction.md`, Implementation. Same model (Qwen3.5 4B Q4_K_M), prompt v3.1, the three stage rooms, on the laptop's GTX 1050 Ti (Vulkan, b12608). Folder: `results-local/layout-fix-laptop-gpu-v2/`.
+
+| Room | First pass flagged | Final flagged | Fixed (now clean) | Improved, still flagged | Removed | Fix attempts | Room time | Without fixing (21 Nov) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| lay-01 bedroom | 3 of 8 | 1 | 2 | 1 | 0 | 9 | 44 s | 9 s |
+| lay-02 living room | 4 of 10 | 2 | 2 | 0 | 0 | 17 | 71 s | 12 s |
+| lay-03 library | 3 of 10 | 1 | 2 | 0 | 0 | 8 | 50 s | 14 s |
+| **All** | **10 of 28** | **4** | **6** | **1** | **0** | **34** | | |
+
+- **The mechanism works with the real model.** The prefilled continuation, the one-line repairs (the grammar keeps the same object) and the review edits all parse, and every room finished.
+- **Flags fall from 10 to 4 of 28.** Most fixes come from the immediate repair. The review fixed what two repairs could not: in the bedroom, the nightstand went from "door" to "overlap" during repair and was clean after a review `move`; in the living room, the dining table was fixed the same way.
+- **What stays flagged is mostly small free pieces overlapping** (an armchair and a side table on the coffee table, a dresser on the bed). The model's tries for them snap to the same 0.5 m grid as before, and its review rounds don't move them. Recommendation 3 above (placing free pieces relative to others) targets exactly this.
+- **It costs time: about 4–5× a plain room on this GPU** (44–71 s against 9–14 s). Each fix re-reads the prompt so far from the slot cache plus a new turn, and the review writes edits. This is a quality-for-time trade, so it fits iso-quality ("time to a clean room"), and the faster machines have more room for it in iso-time.
+- **First version's mistake, fixed before this run:** the cost added metres and m², so three small problems could "cost" less than one large one, and a repair was put back to a try with three problems instead of one. Each problem now also costs a fixed 1, so fewer problems always wins.
+- **Not yet run:** the CPU (expect several minutes per room: each repair costs a few seconds of reading and writing there), the bigger models, and the stage animation on the projector machine.
+
+## LayoutGPT's prompt against ours (24 November 2026)
+
+LayoutGPT (Feng et al., NeurIPS 2023; code at github.com/UCSB-AI/LayoutGPT, MIT licence) run on our local model as segment seg8c "The published method" (`iso_quality+layoutgpt`). Same Qwen3.5 4B Q4_K_M, the three stage rooms, greedy decoding, the laptop's GTX 1050 Ti (Vulkan, b12608). Both prompts ran back to back on the same build. Folders: `results-local/layout-compare-gpu-layoutgpt/`, `results-local/layout-compare-gpu-v31/`. Table: `python scripts/compare_layout.py <folder> <folder>`.
+
+**What was kept from the paper:** its instruction text; its CSS-style line (`bed {length; width; height; orientation (degrees); left; top; depth}`, sizes plus the centre from the room's min corner); its condition, which gives the room's **type and size only** (no outline, no door, no walls); and its k-similar examples (the same room type, nearest by 64 × 64 floor mask).
+**What had to change:** a local model instead of GPT-4. Our example bank instead of 3D-FRONT, which needs a signed licence: 24 rule-furnished rectangular rooms, `data/layout/exemplars.json`, built by `scripts/build_layout_exemplars.py`, none identical to a stage room. K = 4 examples instead of 8, so a prompt fits a 4,096-token slot. Greedy decoding instead of temperature 0.7. A grammar for syntax only, as for v3.1. The model's written sizes are recorded, but the checks and the stage use standard sizes, as for v3.1, so only placement is compared.
+
+| | v3.1 (ours) | LayoutGPT | v3.1 + self-correction (seg8b) |
+| --- | --- | --- | --- |
+| Objects flagged (of 28) | 11 | 10 | **4** |
+| outside · overlap · door | 1 · 7 · 3 | 3 · 3 · **5** | 0 · 3 · 1 |
+| Wall pieces really against a wall | **14 of 14** | 10 of 14 | 14 of 14 |
+| Objects copied from an example it was shown (same type, within 0.2 m) | 0 | **23 of 28** | 1 |
+| Tokens per object | 13–16 | 65 | 28–46 (incl. fixes) |
+| First object | 4.3–4.7 s | 22–25 s | 4.3–4.7 s |
+| Room time, lay-01 / 02 / 03 | **9 / 12 / 12 s** | 45 / 54 / 55 s | 44 / 71 / 50 s |
+
+![LayoutGPT's prompt, the three stage rooms](task8/rooms-layoutgpt-laptop-gpu.png)
+
+- **Similar flag counts, for a different reason.** LayoutGPT copies: 23 of its 28 objects sit where an object stood in one of the example rooms it was shown. That is what k-similar retrieval invites, and the 4B model takes it literally. The examples are clean rectangles, so the copies are mostly clean too. The room is the nearest example's room, not a design for this floor plan.
+- **It cannot see what makes the stage rooms hard.** The condition gives only "max length, max width". So the L-shaped room gets a bookshelf in the missing quarter (outside), and the door is ignored: 5 door flags, among them bookshelves across the library's door. Our v3.1 prompt describes the walls, the cut corner and the door's zone.
+- **It is 4–5× slower.** Each line is about 65 tokens (sizes, three coordinates, orientation) against 13–16. The examples change with every room, so they can't be warmed in advance: 22–25 s pass before the first object, against about 4.5 s. On a CPU this would be several minutes per room.
+- **Sizes:** the model copied the standard sizes from the examples almost always (one object of 28 differed), so using standard sizes for the checks changed nothing.
+- **What would make it fairer:** 3D-FRONT examples (the licence), more of them (K = 8 needs an 8k context), and a bigger model. The paper used GPT-4. A larger model may copy less and reason more, which is the point of the 9B / 122B ladder. Run seg8c on the workstation and the DGX before drawing conclusions about the method itself.
+
+**OptiScene** (NeurIPS 2025): no public code or weights were found (the paper says "will be released"). Nothing to run. If weights appear, the route is a GGUF conversion and a third prompt variant beside these two.
+
+**Recommendation:** keep v3.1 as the stage prompt, and seg8b for the self-correcting version. Use seg8c as an optional "the published method" comparison segment. It reads well on stage when the rooms are shown side by side, but it is slow on a CPU, so play the CPU box's recording.

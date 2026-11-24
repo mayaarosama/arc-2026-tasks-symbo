@@ -9,3 +9,4 @@ data/i23d/gso_cache/
 .venv-*/
 third_party/
 hf-cache/
+weights/

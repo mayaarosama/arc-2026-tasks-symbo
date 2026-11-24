@@ -58,15 +58,59 @@ function fillExamples(s) {
     sel.appendChild(g);
   };
   const planned = all.filter((x) => s.inputs.includes(x.id));
-  const others = all.filter((x) => !s.inputs.includes(x.id));
+  const others = all.filter((x) => !s.inputs.includes(x.id) && x.tier !== "upload");
+  const mine = all.filter((x) => x.tier === "upload" && !s.inputs.includes(x.id));
   group("Planned for this part", planned.map((x) => ["input:" + x.id, describe(x)]));
   group("Other examples (rehearsed)", others.map((x) => ["input:" + x.id, describe(x)]));
+  group("Uploaded pictures (live only)", mine.map((x) => ["input:" + x.id, x.label]));
+  document.getElementById("upload-box").hidden = s.task !== "i23d";
   const canType = (cfg.inputs[s.task] || []).some((x) => x.id === "live");
   if (canType) {
     group("Spare prompts", spares.map((p, i) => ["spare:" + i, p]));
     group("Audience prompt", [["custom", "✎ Type a new prompt…"]]);
   }
   sel.value = s.inputs.includes("live") ? "custom" : sel.options[0] ? sel.options[0].value : "";
+}
+
+// ---------------------------------------------------------------- image-to-3D upload ----
+// The conductor checks the picture, cuts the object out and normalises it once, so every machine
+// gets the same input; the operator sees the cut-out before using it.
+async function loadUploadSpec() {
+  try {
+    const r = await (await fetch("/api/i23d/spec")).json();
+    const dl = document.getElementById("upload-spec");
+    dl.replaceChildren(...r.spec.flatMap((x) => [el("dt", null, x.what), el("dd", null, x.rule)]));
+    if (!r.cutout_installed) say("upload-msg", "The cut-out model is not installed here: only PNGs with a "
+      + "transparent background will work (python scripts/download_weights.py --cutout).", "down");
+  } catch (e) { /* the box still works; the spec is advice */ }
+}
+
+function onUpload(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  const box = document.getElementById("upload-preview");
+  box.replaceChildren();
+  say("upload-msg", `Checking ${file.name} and cutting the object out…`);
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const item = await api("/api/i23d/upload", { name: file.name, data_url: reader.result });
+      const list = cfg.inputs.i23d = (cfg.inputs.i23d || []).filter((x) => x.id !== item.id);
+      list.push(item);
+      const show = (src, cap) => { const f = el("figure"); const im = el("img"); im.src = src;
+        f.append(im, el("figcaption", null, cap)); return f; };
+      box.append(show(reader.result, "your picture"), show(item.input_url, "what every machine gets"));
+      say("upload-msg", item.warnings.length ? "Ready, with a warning: " + item.warnings.join(" ")
+        : "Ready: it is selected below. Check the cut-out before you start.", item.warnings.length ? "warn" : "up");
+      fillExamples(seg());
+      document.getElementById("example").value = "input:" + item.id;
+      onChoice();
+    } catch (e) {
+      say("upload-msg", e.message, "down");
+    }
+    ev.target.value = "";             // the same file can be picked again after a fix
+  };
+  reader.readAsDataURL(file);
 }
 
 function choice() {
@@ -138,10 +182,11 @@ function renderPlan(s, c, plan) {
   const item = (cfg.inputs[s.task] || []).find((x) => x.id === c.inputId) || {};
   if (c.inputId === "live") {
     inp.textContent = "The prompt typed below (live — no recording exists for it)";
-  } else if (s.task === "i23d" && item.input) {
-    inp.append(document.createTextNode(`Photo of a ${item.label.toLowerCase()}`));
+  } else if (s.task === "i23d" && (item.input || item.input_url)) {
+    inp.append(document.createTextNode(item.tier === "upload" ? `Your picture: ${item.label} (live only: no recording)`
+      : `Photo of a ${item.label.toLowerCase()}`));
     const img = el("img", "input-img");
-    img.src = "/media-input/" + item.input;
+    img.src = item.input_url || "/media-input/" + item.input;
     img.onerror = () => img.remove();
     inp.appendChild(img);
   } else if (s.task === "layout" && item.floor_plan) {
@@ -269,6 +314,7 @@ function renderHealth(s) {
     tr.append(el("td", null, `${labels[mid] || mid} · ${TASK_NAME[task] || task}`),
       el("td", h.ok ? "up" : "down", state + (h.mock ? " · practice mode" : "")),
       el("td", null, (h.loaded || []).map((k) => (cfg && cfg.model_labels && cfg.model_labels[k]) || k).join(", ") || "—"),
+      el("td", null, memText(h)),
       el("td", null, h.env_hash || ""),
       el("td", null, h.latency_ms != null ? h.latency_ms + " ms" : ""));
     tb.appendChild(tr);
@@ -277,8 +323,17 @@ function renderHealth(s) {
   const PREP = { loading: "loading…", ready: "ready", error: "could not load", skipped: "uses the recording, nothing to load",
     missing: "not downloaded" };
   const prep = Object.entries(s.prepare || {}).map(([m, p]) =>
-    `${labels[m] || m}: ${PREP[p.status] || p.status}${p.seconds ? " (" + fmtShort(p.seconds) + ")" : ""}${p.message ? " — " + p.message : ""}`);
+    `${labels[m] || m}: ${PREP[p.status] || p.status}${p.seconds ? " (" + fmtShort(p.seconds) + ")" : ""}${p.message ? " — " + p.message : ""}${p.freed && p.freed.length ? " · freed " + p.freed.map((k) => (cfg && cfg.model_labels && cfg.model_labels[k]) || k).join(", ") : ""}`);
   document.getElementById("prepare-state").textContent = prep.join("  |  ");
+}
+
+function memText(h) {   // this worker's memory, then what its machine has free
+  const gb = (mb) => (mb / 1024).toFixed(1) + " GB";
+  const parts = [];
+  if (h.rss_mb != null) parts.push("uses " + gb(h.rss_mb));
+  if (h.ram_free_mb != null) parts.push(gb(h.ram_free_mb) + " RAM free");
+  if (h.vram_free_mb != null) parts.push(gb(h.vram_free_mb) + " GPU free");
+  return parts.join(" · ");
 }
 
 function renderCells(s) {
@@ -368,6 +423,8 @@ Promise.all([
 });
 
 document.getElementById("example").onchange = onChoice;
+document.getElementById("upload").onchange = onUpload;
+loadUploadSpec();
 document.getElementById("start").onclick = start;
 document.getElementById("prepare").onclick = () =>
   api("/api/prepare", { segment_id: segId }).then(() => say("run-msg", "Loading the model on every machine…"))

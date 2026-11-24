@@ -1,11 +1,14 @@
 <#
-CPU box, Windows: set up, start, stop and check the three workers (t2i :8101, i23d :8102, music :8103).
+CPU box, Windows: set up, start, stop and check the five workers
+(t2i :8101, i23d :8102, music :8103, llm :8104, layout :8105; llm and layout share .venv-llm).
 
   powershell -ExecutionPolicy Bypass -File scripts\cpu\cpu_box_windows.ps1 setup     # needs network
   powershell -ExecutionPolicy Bypass -File scripts\cpu\cpu_box_windows.ps1 start
   powershell -ExecutionPolicy Bypass -File scripts\cpu\cpu_box_windows.ps1 status
   powershell -ExecutionPolicy Bypass -File scripts\cpu\cpu_box_windows.ps1 stop
   powershell -ExecutionPolicy Bypass -File scripts\cpu\cpu_box_windows.ps1 firewall  # as Administrator, once
+  powershell -ExecutionPolicy Bypass -File scripts\cpu\cpu_box_windows.ps1 conductor # the machine running the
+      conductor (operator laptop): its venv and the cut-out model for uploaded pictures (needs network)
 
 Secrets come from a file (default: ..\config.txt next to demo\), never from arguments:
   ARC_DEMO_TOKEN=<shared secret, same on every machine>
@@ -15,7 +18,7 @@ Requires: Python 3.10/3.11 (py launcher), git, and Visual Studio Build Tools wit
 "Desktop development with C++" (SF3D compiles texture_baker / uv_unwrapper).
 #>
 param(
-    [Parameter(Position = 0)][ValidateSet("setup", "start", "stop", "status", "firewall")][string]$Action = "status",
+    [Parameter(Position = 0)][ValidateSet("setup", "start", "stop", "status", "firewall", "conductor")][string]$Action = "status",
     [string]$Secrets = "",
     [string]$WorkerConfig = "config/worker-cpu.yaml",
     [string]$PythonVersion = "3.11",
@@ -28,9 +31,11 @@ $Sf3dDir = Join-Path $Demo "third_party\stable-fast-3d"
 $Sa3Dir = Join-Path $Demo "third_party\stable-audio-3"
 $Sa3Torch = "2.7.1"                 # stable-audio-3 pins torch + torchaudio to this version
 $TorchIndex = "https://download.pytorch.org/whl/cpu"
-$Ports = [ordered]@{ t2i = 8101; i23d = 8102; music = 8103 }
+$Ports = [ordered]@{ t2i = 8101; i23d = 8102; music = 8103; llm = 8104; layout = 8105 }
 Set-Location $Demo
 New-Item -ItemType Directory -Force results | Out-Null
+
+function Get-TaskVenv([string]$Task) { if ($Task -eq "llm" -or $Task -eq "layout") { ".venv-llm" } else { ".venv-$Task" } }
 
 function Invoke-Step([string]$Exe, [string[]]$Arguments) {
     # Echo, run, and stop on a non-zero exit code (native tools do not throw on their own).
@@ -105,10 +110,19 @@ function Invoke-Setup {
         Invoke-Step $pyMusic @("-m", "pip", "install", "-q", "-r", "requirements/music.txt")
         Invoke-Step $pyMusic @("-m", "pip", "install", "-q", "--no-deps", "-e", $Sa3Dir)
 
+        Write-Host "== language-model env (.venv-llm): no torch; the model runs in llama.cpp's llama-server (llm + layout)"
+        if (-not (Test-Path ".venv-llm")) { Invoke-Step "py" @("-$PythonVersion", "-m", "venv", ".venv-llm") }
+        $pyLlm = Get-VenvPython ".venv-llm"
+        Invoke-Step $pyLlm @("-m", "pip", "install", "-q", "--upgrade", "pip")
+        Invoke-Step $pyLlm @("-m", "pip", "install", "-q", "-r", "requirements/llm.txt")
+        Invoke-Step $pyLlm @("scripts/cpu/fetch_llama_cpp.py")       # the pinned CPU release, third_party\llama.cpp\bin
+
         Write-Host "== weights (HF_TOKEN from the secrets file)"
         Invoke-Step (Get-VenvPython ".venv-t2i") @("scripts/download_weights.py", "--machine", "cpu", "--task", "t2i")
         Invoke-Step $py3d @("scripts/download_weights.py", "--machine", "cpu", "--task", "i23d")
         Invoke-Step $pyMusic @("scripts/download_weights.py", "--machine", "cpu", "--task", "music")
+        Invoke-Step $pyLlm @("scripts/download_weights.py", "--machine", "cpu", "--task", "llm")      # Qwen3.5 4B, one GGUF
+        Invoke-Step $pyLlm @("scripts/download_weights.py", "--machine", "cpu", "--task", "layout")   # same file: already there
 
         Write-Host "== this machine"
         Invoke-Step (Get-VenvPython ".venv-t2i") @("scripts/cpu/check_cpu.py")
@@ -119,7 +133,28 @@ function Invoke-Setup {
         try { Invoke-Step $py3d @("scripts/verify_offline.py", "--config", $WorkerConfig, "--task", "i23d") }
         finally { Remove-Item env:PYTHONPATH -ErrorAction SilentlyContinue }
         Invoke-Step $pyMusic @("scripts/verify_offline.py", "--config", $WorkerConfig, "--task", "music")
+        Invoke-Step $pyLlm @("scripts/verify_offline.py", "--config", $WorkerConfig, "--task", "llm")
+        Invoke-Step $pyLlm @("scripts/verify_offline.py", "--config", $WorkerConfig, "--task", "layout")
         Write-Host "setup done. Next, as Administrator: ... cpu_box_windows.ps1 firewall"
+    } finally {
+        Stop-Transcript | Out-Null
+    }
+}
+
+function Invoke-ConductorSetup {
+    # The conductor on this machine (normally the operator laptop): its venv, and the cut-out model
+    # that removes the background from uploaded pictures (image-to-3D). Runs on the CPU; on a GPU
+    # only if onnxruntime-gpu is installed instead (arcdemo/imageprep.py picks it up by itself).
+    Start-Transcript -Path ("results\setup-conductor-{0}.log" -f (Get-Date -Format "yyyyMMdd-HHmmss")) | Out-Null
+    try {
+        if (-not (Get-Command py -ErrorAction SilentlyContinue)) { throw "the py launcher is missing: install Python $PythonVersion from python.org" }
+        if (-not (Test-Path ".venv")) { Invoke-Step "py" @("-$PythonVersion", "-m", "venv", ".venv") }
+        $py = Get-VenvPython ".venv"
+        Invoke-Step $py @("-m", "pip", "install", "-q", "--upgrade", "pip")
+        Invoke-Step $py @("-m", "pip", "install", "-q", "-r", "requirements/conductor.txt")
+        Invoke-Step $py @("scripts/download_weights.py", "--cutout")       # U2-Net, 176 MB -> weights\u2net\
+        Invoke-Step $py @("scripts/verify_offline.py", "--cutout")
+        Write-Host "conductor ready:  $py -m arcdemo.conductor --config config/demo.yaml"
     } finally {
         Stop-Transcript | Out-Null
     }
@@ -141,13 +176,14 @@ function Start-Workers {
         if ((Test-Path $pidFile) -and (Get-Process -Id (Get-Content $pidFile) -ErrorAction SilentlyContinue)) {
             Write-Host "$task already running (pid $(Get-Content $pidFile))"; continue
         }
-        $py = Get-VenvPython ".venv-$task"
-        if (-not (Test-Path $py)) { throw ".venv-$task missing: run setup first" }
+        $venv = Get-TaskVenv $task
+        $py = Get-VenvPython $venv
+        if (-not (Test-Path $py)) { throw "$venv missing: run setup first" }
         # PYTHONPATH is inherited by the child: SF3D's repo for i23d, nothing for t2i
         if ($task -eq "i23d") { $env:PYTHONPATH = $Sf3dDir } else { Remove-Item env:PYTHONPATH -ErrorAction SilentlyContinue }
         $workerArgs = "-m arcdemo.worker --config $WorkerConfig --task $task --port $($Ports[$task])"
         $out = Join-Path $Demo "results\stdout-$task.log"
-        Write-Host "+ .venv-${task}: python $workerArgs > results\stdout-$task.log"
+        Write-Host "+ ${venv}: python $workerArgs > results\stdout-$task.log"
         # Through cmd + ShellExecute (no -Redirect*), so the worker inherits none of this shell's
         # handles: a captured launcher (task scheduler, remote session) would otherwise never exit.
         $p = Start-Process -FilePath "cmd.exe" -WorkingDirectory $Demo -WindowStyle Hidden -PassThru `
@@ -189,8 +225,8 @@ function Open-Firewall {
     $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
         [Security.Principal.WindowsBuiltInRole]::Administrator)
     if (-not $admin) { throw "run this action from an Administrator PowerShell" }
-    New-NetFirewallRule -DisplayName "ARC demo workers" -Direction Inbound -Protocol TCP -LocalPort 8101, 8102, 8103 -Action Allow | Out-Null
-    Write-Host "inbound TCP 8101, 8102, 8103 allowed"
+    New-NetFirewallRule -DisplayName "ARC demo workers" -Direction Inbound -Protocol TCP -LocalPort 8101, 8102, 8103, 8104, 8105 -Action Allow | Out-Null
+    Write-Host "inbound TCP 8101-8105 allowed"
 }
 
 switch ($Action) {
@@ -199,4 +235,5 @@ switch ($Action) {
     "stop"     { Stop-Workers }
     "status"   { Show-Status }
     "firewall" { Open-Firewall }
+    "conductor" { Invoke-ConductorSetup }
 }

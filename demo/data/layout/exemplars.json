@@ -1,0 +1,1190 @@
+[
+ {
+  "id": "ex-bedroom-1",
+  "room_type": "bedroom",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    3.2,
+    0
+   ],
+   [
+    3.2,
+    3.0
+   ],
+   [
+    0,
+    3.0
+   ]
+  ],
+  "max_objects": 7,
+  "door": [
+   3.2,
+   1.25
+  ],
+  "v3": [
+   "double_bed wall=south at=1.55",
+   "nightstand wall=south at=0.50",
+   "nightstand wall=south at=2.70",
+   "wardrobe wall=west at=1.45",
+   "dresser wall=north at=1.65",
+   "plant x=0.35 y=0.55 facing=south",
+   "floor_lamp x=2.85 y=2.65 facing=south"
+  ],
+  "layout": [
+   "double_bed {length: 1.60m; width: 2.00m; height: 0.50m; orientation: 0 degrees; left: 1.55m; top: 1.00m; depth: 0.25m;}",
+   "nightstand {length: 0.50m; width: 0.40m; height: 0.55m; orientation: 0 degrees; left: 0.50m; top: 0.20m; depth: 0.28m;}",
+   "nightstand {length: 0.50m; width: 0.40m; height: 0.55m; orientation: 0 degrees; left: 2.70m; top: 0.20m; depth: 0.28m;}",
+   "wardrobe {length: 1.20m; width: 0.60m; height: 2.00m; orientation: 90 degrees; left: 0.30m; top: 1.45m; depth: 1.00m;}",
+   "dresser {length: 1.20m; width: 0.50m; height: 0.80m; orientation: 180 degrees; left: 1.65m; top: 2.75m; depth: 0.40m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.35m; top: 0.55m; depth: 0.50m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 2.85m; top: 2.65m; depth: 0.80m;}"
+  ]
+ },
+ {
+  "id": "ex-bedroom-2",
+  "room_type": "bedroom",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    3.6,
+    0
+   ],
+   [
+    3.6,
+    3.2
+   ],
+   [
+    0,
+    3.2
+   ]
+  ],
+  "max_objects": 9,
+  "door": [
+   2.13,
+   3.2
+  ],
+  "v3": [
+   "double_bed wall=south at=1.75",
+   "nightstand wall=south at=0.70",
+   "nightstand wall=south at=2.90",
+   "wardrobe wall=east at=1.65",
+   "dresser wall=north at=0.65",
+   "desk wall=west at=1.65",
+   "chair x=0.85 y=2.15 facing=west",
+   "plant x=0.25 y=0.35 facing=south",
+   "floor_lamp x=3.25 y=2.85 facing=south"
+  ],
+  "layout": [
+   "double_bed {length: 1.60m; width: 2.00m; height: 0.50m; orientation: 0 degrees; left: 1.75m; top: 1.00m; depth: 0.25m;}",
+   "nightstand {length: 0.50m; width: 0.40m; height: 0.55m; orientation: 0 degrees; left: 0.70m; top: 0.20m; depth: 0.28m;}",
+   "nightstand {length: 0.50m; width: 0.40m; height: 0.55m; orientation: 0 degrees; left: 2.90m; top: 0.20m; depth: 0.28m;}",
+   "wardrobe {length: 1.20m; width: 0.60m; height: 2.00m; orientation: 270 degrees; left: 3.30m; top: 1.65m; depth: 1.00m;}",
+   "dresser {length: 1.20m; width: 0.50m; height: 0.80m; orientation: 180 degrees; left: 0.65m; top: 2.95m; depth: 0.40m;}",
+   "desk {length: 1.20m; width: 0.60m; height: 0.75m; orientation: 90 degrees; left: 0.30m; top: 1.65m; depth: 0.38m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 270 degrees; left: 0.85m; top: 2.15m; depth: 0.45m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.25m; top: 0.35m; depth: 0.50m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 3.25m; top: 2.85m; depth: 0.80m;}"
+  ]
+ },
+ {
+  "id": "ex-bedroom-3",
+  "room_type": "bedroom",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    4.0,
+    0
+   ],
+   [
+    4.0,
+    3.4
+   ],
+   [
+    0,
+    3.4
+   ]
+  ],
+  "max_objects": 9,
+  "door": [
+   3.34,
+   3.4
+  ],
+  "v3": [
+   "double_bed wall=south at=2.05",
+   "nightstand wall=south at=0.90",
+   "nightstand wall=south at=3.10",
+   "wardrobe wall=east at=1.65",
+   "dresser wall=north at=1.85",
+   "desk wall=west at=1.65",
+   "chair x=0.85 y=1.65 facing=west",
+   "plant x=0.35 y=0.35 facing=south",
+   "floor_lamp x=3.35 y=2.35 facing=south"
+  ],
+  "layout": [
+   "double_bed {length: 1.60m; width: 2.00m; height: 0.50m; orientation: 0 degrees; left: 2.05m; top: 1.00m; depth: 0.25m;}",
+   "nightstand {length: 0.50m; width: 0.40m; height: 0.55m; orientation: 0 degrees; left: 0.90m; top: 0.20m; depth: 0.28m;}",
+   "nightstand {length: 0.50m; width: 0.40m; height: 0.55m; orientation: 0 degrees; left: 3.10m; top: 0.20m; depth: 0.28m;}",
+   "wardrobe {length: 1.20m; width: 0.60m; height: 2.00m; orientation: 270 degrees; left: 3.70m; top: 1.65m; depth: 1.00m;}",
+   "dresser {length: 1.20m; width: 0.50m; height: 0.80m; orientation: 180 degrees; left: 1.85m; top: 3.15m; depth: 0.40m;}",
+   "desk {length: 1.20m; width: 0.60m; height: 0.75m; orientation: 90 degrees; left: 0.30m; top: 1.65m; depth: 0.38m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 270 degrees; left: 0.85m; top: 1.65m; depth: 0.45m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.35m; top: 0.35m; depth: 0.50m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 3.35m; top: 2.35m; depth: 0.80m;}"
+  ]
+ },
+ {
+  "id": "ex-bedroom-4",
+  "room_type": "bedroom",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    4.2,
+    0
+   ],
+   [
+    4.2,
+    3.8
+   ],
+   [
+    0,
+    3.8
+   ]
+  ],
+  "max_objects": 9,
+  "door": [
+   2.22,
+   0
+  ],
+  "v3": [
+   "double_bed wall=north at=2.15",
+   "nightstand wall=north at=1.00",
+   "nightstand wall=north at=3.20",
+   "wardrobe wall=east at=1.85",
+   "dresser wall=south at=0.75",
+   "desk wall=west at=1.85",
+   "chair x=0.85 y=1.85 facing=west",
+   "plant x=0.25 y=0.65 facing=south",
+   "floor_lamp x=3.85 y=3.45 facing=south"
+  ],
+  "layout": [
+   "double_bed {length: 1.60m; width: 2.00m; height: 0.50m; orientation: 180 degrees; left: 2.15m; top: 2.80m; depth: 0.25m;}",
+   "nightstand {length: 0.50m; width: 0.40m; height: 0.55m; orientation: 180 degrees; left: 1.00m; top: 3.60m; depth: 0.28m;}",
+   "nightstand {length: 0.50m; width: 0.40m; height: 0.55m; orientation: 180 degrees; left: 3.20m; top: 3.60m; depth: 0.28m;}",
+   "wardrobe {length: 1.20m; width: 0.60m; height: 2.00m; orientation: 270 degrees; left: 3.90m; top: 1.85m; depth: 1.00m;}",
+   "dresser {length: 1.20m; width: 0.50m; height: 0.80m; orientation: 0 degrees; left: 0.75m; top: 0.25m; depth: 0.40m;}",
+   "desk {length: 1.20m; width: 0.60m; height: 0.75m; orientation: 90 degrees; left: 0.30m; top: 1.85m; depth: 0.38m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 270 degrees; left: 0.85m; top: 1.85m; depth: 0.45m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.25m; top: 0.65m; depth: 0.50m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 3.85m; top: 3.45m; depth: 0.80m;}"
+  ]
+ },
+ {
+  "id": "ex-bedroom-5",
+  "room_type": "bedroom",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    4.6,
+    0
+   ],
+   [
+    4.6,
+    3.6
+   ],
+   [
+    0,
+    3.6
+   ]
+  ],
+  "max_objects": 9,
+  "door": [
+   0,
+   0.65
+  ],
+  "v3": [
+   "double_bed wall=south at=2.25",
+   "nightstand wall=south at=1.20",
+   "nightstand wall=south at=3.40",
+   "wardrobe wall=east at=1.75",
+   "dresser wall=north at=2.25",
+   "desk wall=west at=2.15",
+   "chair x=0.85 y=2.15 facing=west",
+   "plant x=1.05 y=0.55 facing=south",
+   "floor_lamp x=4.25 y=3.25 facing=south"
+  ],
+  "layout": [
+   "double_bed {length: 1.60m; width: 2.00m; height: 0.50m; orientation: 0 degrees; left: 2.25m; top: 1.00m; depth: 0.25m;}",
+   "nightstand {length: 0.50m; width: 0.40m; height: 0.55m; orientation: 0 degrees; left: 1.20m; top: 0.20m; depth: 0.28m;}",
+   "nightstand {length: 0.50m; width: 0.40m; height: 0.55m; orientation: 0 degrees; left: 3.40m; top: 0.20m; depth: 0.28m;}",
+   "wardrobe {length: 1.20m; width: 0.60m; height: 2.00m; orientation: 270 degrees; left: 4.30m; top: 1.75m; depth: 1.00m;}",
+   "dresser {length: 1.20m; width: 0.50m; height: 0.80m; orientation: 180 degrees; left: 2.25m; top: 3.35m; depth: 0.40m;}",
+   "desk {length: 1.20m; width: 0.60m; height: 0.75m; orientation: 90 degrees; left: 0.30m; top: 2.15m; depth: 0.38m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 270 degrees; left: 0.85m; top: 2.15m; depth: 0.45m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 1.05m; top: 0.55m; depth: 0.50m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 4.25m; top: 3.25m; depth: 0.80m;}"
+  ]
+ },
+ {
+  "id": "ex-bedroom-6",
+  "room_type": "bedroom",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    5.0,
+    0
+   ],
+   [
+    5.0,
+    4.0
+   ],
+   [
+    0,
+    4.0
+   ]
+  ],
+  "max_objects": 9,
+  "door": [
+   3.59,
+   4.0
+  ],
+  "v3": [
+   "double_bed wall=south at=2.45",
+   "nightstand wall=south at=1.40",
+   "nightstand wall=south at=3.60",
+   "wardrobe wall=east at=2.05",
+   "dresser wall=north at=2.15",
+   "desk wall=west at=2.05",
+   "chair x=0.85 y=2.05 facing=west",
+   "plant x=0.35 y=0.35 facing=south",
+   "floor_lamp x=4.65 y=3.65 facing=south"
+  ],
+  "layout": [
+   "double_bed {length: 1.60m; width: 2.00m; height: 0.50m; orientation: 0 degrees; left: 2.45m; top: 1.00m; depth: 0.25m;}",
+   "nightstand {length: 0.50m; width: 0.40m; height: 0.55m; orientation: 0 degrees; left: 1.40m; top: 0.20m; depth: 0.28m;}",
+   "nightstand {length: 0.50m; width: 0.40m; height: 0.55m; orientation: 0 degrees; left: 3.60m; top: 0.20m; depth: 0.28m;}",
+   "wardrobe {length: 1.20m; width: 0.60m; height: 2.00m; orientation: 270 degrees; left: 4.70m; top: 2.05m; depth: 1.00m;}",
+   "dresser {length: 1.20m; width: 0.50m; height: 0.80m; orientation: 180 degrees; left: 2.15m; top: 3.75m; depth: 0.40m;}",
+   "desk {length: 1.20m; width: 0.60m; height: 0.75m; orientation: 90 degrees; left: 0.30m; top: 2.05m; depth: 0.38m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 270 degrees; left: 0.85m; top: 2.05m; depth: 0.45m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.35m; top: 0.35m; depth: 0.50m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 4.65m; top: 3.65m; depth: 0.80m;}"
+  ]
+ },
+ {
+  "id": "ex-bedroom-7",
+  "room_type": "bedroom",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    5.4,
+    0
+   ],
+   [
+    5.4,
+    4.4
+   ],
+   [
+    0,
+    4.4
+   ]
+  ],
+  "max_objects": 9,
+  "door": [
+   0,
+   1.38
+  ],
+  "v3": [
+   "double_bed wall=south at=2.75",
+   "nightstand wall=south at=1.60",
+   "nightstand wall=south at=3.80",
+   "wardrobe wall=east at=2.25",
+   "dresser wall=north at=2.75",
+   "desk wall=west at=2.85",
+   "chair x=0.85 y=2.85 facing=west",
+   "plant x=0.35 y=0.35 facing=south",
+   "floor_lamp x=5.05 y=4.05 facing=south"
+  ],
+  "layout": [
+   "double_bed {length: 1.60m; width: 2.00m; height: 0.50m; orientation: 0 degrees; left: 2.75m; top: 1.00m; depth: 0.25m;}",
+   "nightstand {length: 0.50m; width: 0.40m; height: 0.55m; orientation: 0 degrees; left: 1.60m; top: 0.20m; depth: 0.28m;}",
+   "nightstand {length: 0.50m; width: 0.40m; height: 0.55m; orientation: 0 degrees; left: 3.80m; top: 0.20m; depth: 0.28m;}",
+   "wardrobe {length: 1.20m; width: 0.60m; height: 2.00m; orientation: 270 degrees; left: 5.10m; top: 2.25m; depth: 1.00m;}",
+   "dresser {length: 1.20m; width: 0.50m; height: 0.80m; orientation: 180 degrees; left: 2.75m; top: 4.15m; depth: 0.40m;}",
+   "desk {length: 1.20m; width: 0.60m; height: 0.75m; orientation: 90 degrees; left: 0.30m; top: 2.85m; depth: 0.38m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 270 degrees; left: 0.85m; top: 2.85m; depth: 0.45m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.35m; top: 0.35m; depth: 0.50m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 5.05m; top: 4.05m; depth: 0.80m;}"
+  ]
+ },
+ {
+  "id": "ex-bedroom-8",
+  "room_type": "bedroom",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    6.0,
+    0
+   ],
+   [
+    6.0,
+    4.6
+   ],
+   [
+    0,
+    4.6
+   ]
+  ],
+  "max_objects": 9,
+  "door": [
+   0,
+   2.14
+  ],
+  "v3": [
+   "double_bed wall=south at=2.95",
+   "nightstand wall=south at=1.90",
+   "nightstand wall=south at=4.10",
+   "wardrobe wall=east at=2.25",
+   "dresser wall=north at=2.95",
+   "desk wall=west at=3.55",
+   "chair x=0.85 y=3.55 facing=west",
+   "plant x=0.35 y=0.35 facing=south",
+   "floor_lamp x=5.65 y=4.25 facing=south"
+  ],
+  "layout": [
+   "double_bed {length: 1.60m; width: 2.00m; height: 0.50m; orientation: 0 degrees; left: 2.95m; top: 1.00m; depth: 0.25m;}",
+   "nightstand {length: 0.50m; width: 0.40m; height: 0.55m; orientation: 0 degrees; left: 1.90m; top: 0.20m; depth: 0.28m;}",
+   "nightstand {length: 0.50m; width: 0.40m; height: 0.55m; orientation: 0 degrees; left: 4.10m; top: 0.20m; depth: 0.28m;}",
+   "wardrobe {length: 1.20m; width: 0.60m; height: 2.00m; orientation: 270 degrees; left: 5.70m; top: 2.25m; depth: 1.00m;}",
+   "dresser {length: 1.20m; width: 0.50m; height: 0.80m; orientation: 180 degrees; left: 2.95m; top: 4.35m; depth: 0.40m;}",
+   "desk {length: 1.20m; width: 0.60m; height: 0.75m; orientation: 90 degrees; left: 0.30m; top: 3.55m; depth: 0.38m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 270 degrees; left: 0.85m; top: 3.55m; depth: 0.45m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.35m; top: 0.35m; depth: 0.50m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 5.65m; top: 4.25m; depth: 0.80m;}"
+  ]
+ },
+ {
+  "id": "ex-living_room-1",
+  "room_type": "living_room",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    3.2,
+    0
+   ],
+   [
+    3.2,
+    3.0
+   ],
+   [
+    0,
+    3.0
+   ]
+  ],
+  "max_objects": 9,
+  "door": [
+   3.2,
+   1.52
+  ],
+  "v3": [
+   "sofa wall=south at=1.55",
+   "coffee_table x=1.60 y=1.55 facing=north",
+   "tv_stand wall=north at=1.60",
+   "armchair x=2.00 y=2.15 facing=south",
+   "side_table x=0.25 y=0.75 facing=north",
+   "bookshelf wall=west at=1.45",
+   "cabinet wall=west at=2.35",
+   "plant x=0.25 y=0.25 facing=south",
+   "floor_lamp x=2.85 y=0.35 facing=south"
+  ],
+  "layout": [
+   "sofa {length: 2.20m; width: 0.90m; height: 0.85m; orientation: 0 degrees; left: 1.55m; top: 0.45m; depth: 0.42m;}",
+   "coffee_table {length: 1.20m; width: 0.60m; height: 0.45m; orientation: 0 degrees; left: 1.60m; top: 1.55m; depth: 0.23m;}",
+   "tv_stand {length: 1.50m; width: 0.40m; height: 0.50m; orientation: 180 degrees; left: 1.60m; top: 2.80m; depth: 0.25m;}",
+   "armchair {length: 0.80m; width: 0.80m; height: 0.90m; orientation: 180 degrees; left: 2.00m; top: 2.15m; depth: 0.45m;}",
+   "side_table {length: 0.50m; width: 0.50m; height: 0.55m; orientation: 0 degrees; left: 0.25m; top: 0.75m; depth: 0.28m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 90 degrees; left: 0.15m; top: 1.45m; depth: 0.90m;}",
+   "cabinet {length: 1.00m; width: 0.45m; height: 0.90m; orientation: 90 degrees; left: 0.23m; top: 2.35m; depth: 0.45m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.25m; top: 0.25m; depth: 0.50m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 2.85m; top: 0.35m; depth: 0.80m;}"
+  ]
+ },
+ {
+  "id": "ex-living_room-2",
+  "room_type": "living_room",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    3.6,
+    0
+   ],
+   [
+    3.6,
+    3.2
+   ],
+   [
+    0,
+    3.2
+   ]
+  ],
+  "max_objects": 9,
+  "door": [
+   1.93,
+   0
+  ],
+  "v3": [
+   "sofa wall=north at=1.75",
+   "coffee_table x=1.80 y=1.65 facing=south",
+   "tv_stand wall=east at=1.60",
+   "armchair x=2.80 y=1.65 facing=north",
+   "side_table x=0.35 y=2.85 facing=south",
+   "bookshelf wall=east at=2.75",
+   "cabinet wall=west at=1.65",
+   "plant x=0.35 y=0.35 facing=south",
+   "floor_lamp x=3.25 y=0.35 facing=south"
+  ],
+  "layout": [
+   "sofa {length: 2.20m; width: 0.90m; height: 0.85m; orientation: 180 degrees; left: 1.75m; top: 2.75m; depth: 0.42m;}",
+   "coffee_table {length: 1.20m; width: 0.60m; height: 0.45m; orientation: 180 degrees; left: 1.80m; top: 1.65m; depth: 0.23m;}",
+   "tv_stand {length: 1.50m; width: 0.40m; height: 0.50m; orientation: 270 degrees; left: 3.40m; top: 1.60m; depth: 0.25m;}",
+   "armchair {length: 0.80m; width: 0.80m; height: 0.90m; orientation: 0 degrees; left: 2.80m; top: 1.65m; depth: 0.45m;}",
+   "side_table {length: 0.50m; width: 0.50m; height: 0.55m; orientation: 180 degrees; left: 0.35m; top: 2.85m; depth: 0.28m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 270 degrees; left: 3.45m; top: 2.75m; depth: 0.90m;}",
+   "cabinet {length: 1.00m; width: 0.45m; height: 0.90m; orientation: 90 degrees; left: 0.23m; top: 1.65m; depth: 0.45m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.35m; top: 0.35m; depth: 0.50m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 3.25m; top: 0.35m; depth: 0.80m;}"
+  ]
+ },
+ {
+  "id": "ex-living_room-3",
+  "room_type": "living_room",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    4.0,
+    0
+   ],
+   [
+    4.0,
+    3.4
+   ],
+   [
+    0,
+    3.4
+   ]
+  ],
+  "max_objects": 9,
+  "door": [
+   0.98,
+   3.4
+  ],
+  "v3": [
+   "sofa wall=south at=2.05",
+   "coffee_table x=2.00 y=1.55 facing=north",
+   "tv_stand wall=north at=2.60",
+   "armchair x=3.60 y=1.55 facing=south",
+   "side_table x=0.55 y=0.35 facing=north",
+   "bookshelf wall=east at=2.35",
+   "cabinet wall=west at=1.65",
+   "plant x=0.35 y=0.75 facing=south",
+   "floor_lamp x=3.65 y=0.35 facing=south"
+  ],
+  "layout": [
+   "sofa {length: 2.20m; width: 0.90m; height: 0.85m; orientation: 0 degrees; left: 2.05m; top: 0.45m; depth: 0.42m;}",
+   "coffee_table {length: 1.20m; width: 0.60m; height: 0.45m; orientation: 0 degrees; left: 2.00m; top: 1.55m; depth: 0.23m;}",
+   "tv_stand {length: 1.50m; width: 0.40m; height: 0.50m; orientation: 180 degrees; left: 2.60m; top: 3.20m; depth: 0.25m;}",
+   "armchair {length: 0.80m; width: 0.80m; height: 0.90m; orientation: 180 degrees; left: 3.60m; top: 1.55m; depth: 0.45m;}",
+   "side_table {length: 0.50m; width: 0.50m; height: 0.55m; orientation: 0 degrees; left: 0.55m; top: 0.35m; depth: 0.28m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 270 degrees; left: 3.85m; top: 2.35m; depth: 0.90m;}",
+   "cabinet {length: 1.00m; width: 0.45m; height: 0.90m; orientation: 90 degrees; left: 0.23m; top: 1.65m; depth: 0.45m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.35m; top: 0.75m; depth: 0.50m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 3.65m; top: 0.35m; depth: 0.80m;}"
+  ]
+ },
+ {
+  "id": "ex-living_room-4",
+  "room_type": "living_room",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    4.2,
+    0
+   ],
+   [
+    4.2,
+    3.8
+   ],
+   [
+    0,
+    3.8
+   ]
+  ],
+  "max_objects": 9,
+  "door": [
+   0,
+   0.78
+  ],
+  "v3": [
+   "sofa wall=south at=2.15",
+   "coffee_table x=2.10 y=1.55 facing=north",
+   "tv_stand wall=north at=2.10",
+   "armchair x=3.70 y=1.55 facing=south",
+   "side_table x=1.05 y=1.15 facing=north",
+   "bookshelf wall=east at=2.25",
+   "cabinet wall=west at=2.15",
+   "plant x=0.85 y=1.55 facing=south",
+   "floor_lamp x=3.85 y=0.35 facing=south"
+  ],
+  "layout": [
+   "sofa {length: 2.20m; width: 0.90m; height: 0.85m; orientation: 0 degrees; left: 2.15m; top: 0.45m; depth: 0.42m;}",
+   "coffee_table {length: 1.20m; width: 0.60m; height: 0.45m; orientation: 0 degrees; left: 2.10m; top: 1.55m; depth: 0.23m;}",
+   "tv_stand {length: 1.50m; width: 0.40m; height: 0.50m; orientation: 180 degrees; left: 2.10m; top: 3.60m; depth: 0.25m;}",
+   "armchair {length: 0.80m; width: 0.80m; height: 0.90m; orientation: 180 degrees; left: 3.70m; top: 1.55m; depth: 0.45m;}",
+   "side_table {length: 0.50m; width: 0.50m; height: 0.55m; orientation: 0 degrees; left: 1.05m; top: 1.15m; depth: 0.28m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 270 degrees; left: 4.05m; top: 2.25m; depth: 0.90m;}",
+   "cabinet {length: 1.00m; width: 0.45m; height: 0.90m; orientation: 90 degrees; left: 0.23m; top: 2.15m; depth: 0.45m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.85m; top: 1.55m; depth: 0.50m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 3.85m; top: 0.35m; depth: 0.80m;}"
+  ]
+ },
+ {
+  "id": "ex-living_room-5",
+  "room_type": "living_room",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    4.6,
+    0
+   ],
+   [
+    4.6,
+    3.6
+   ],
+   [
+    0,
+    3.6
+   ]
+  ],
+  "max_objects": 9,
+  "door": [
+   4.6,
+   2.36
+  ],
+  "v3": [
+   "sofa wall=south at=2.25",
+   "coffee_table x=2.30 y=1.55 facing=north",
+   "tv_stand wall=north at=2.30",
+   "armchair x=3.80 y=1.25 facing=south",
+   "side_table x=0.85 y=0.35 facing=north",
+   "bookshelf wall=east at=1.15",
+   "cabinet wall=west at=1.75",
+   "plant x=0.35 y=0.35 facing=south",
+   "floor_lamp x=4.25 y=0.35 facing=south"
+  ],
+  "layout": [
+   "sofa {length: 2.20m; width: 0.90m; height: 0.85m; orientation: 0 degrees; left: 2.25m; top: 0.45m; depth: 0.42m;}",
+   "coffee_table {length: 1.20m; width: 0.60m; height: 0.45m; orientation: 0 degrees; left: 2.30m; top: 1.55m; depth: 0.23m;}",
+   "tv_stand {length: 1.50m; width: 0.40m; height: 0.50m; orientation: 180 degrees; left: 2.30m; top: 3.40m; depth: 0.25m;}",
+   "armchair {length: 0.80m; width: 0.80m; height: 0.90m; orientation: 180 degrees; left: 3.80m; top: 1.25m; depth: 0.45m;}",
+   "side_table {length: 0.50m; width: 0.50m; height: 0.55m; orientation: 0 degrees; left: 0.85m; top: 0.35m; depth: 0.28m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 270 degrees; left: 4.45m; top: 1.15m; depth: 0.90m;}",
+   "cabinet {length: 1.00m; width: 0.45m; height: 0.90m; orientation: 90 degrees; left: 0.23m; top: 1.75m; depth: 0.45m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.35m; top: 0.35m; depth: 0.50m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 4.25m; top: 0.35m; depth: 0.80m;}"
+  ]
+ },
+ {
+  "id": "ex-living_room-6",
+  "room_type": "living_room",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    5.0,
+    0
+   ],
+   [
+    5.0,
+    4.0
+   ],
+   [
+    0,
+    4.0
+   ]
+  ],
+  "max_objects": 9,
+  "door": [
+   1.18,
+   0
+  ],
+  "v3": [
+   "sofa wall=north at=2.45",
+   "coffee_table x=2.50 y=2.45 facing=south",
+   "tv_stand wall=south at=2.80",
+   "armchair x=4.10 y=2.45 facing=north",
+   "side_table x=1.05 y=3.65 facing=south",
+   "bookshelf wall=east at=2.05",
+   "cabinet wall=west at=2.05",
+   "plant x=0.25 y=0.55 facing=south",
+   "floor_lamp x=4.65 y=0.35 facing=south"
+  ],
+  "layout": [
+   "sofa {length: 2.20m; width: 0.90m; height: 0.85m; orientation: 180 degrees; left: 2.45m; top: 3.55m; depth: 0.42m;}",
+   "coffee_table {length: 1.20m; width: 0.60m; height: 0.45m; orientation: 180 degrees; left: 2.50m; top: 2.45m; depth: 0.23m;}",
+   "tv_stand {length: 1.50m; width: 0.40m; height: 0.50m; orientation: 0 degrees; left: 2.80m; top: 0.20m; depth: 0.25m;}",
+   "armchair {length: 0.80m; width: 0.80m; height: 0.90m; orientation: 0 degrees; left: 4.10m; top: 2.45m; depth: 0.45m;}",
+   "side_table {length: 0.50m; width: 0.50m; height: 0.55m; orientation: 180 degrees; left: 1.05m; top: 3.65m; depth: 0.28m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 270 degrees; left: 4.85m; top: 2.05m; depth: 0.90m;}",
+   "cabinet {length: 1.00m; width: 0.45m; height: 0.90m; orientation: 90 degrees; left: 0.23m; top: 2.05m; depth: 0.45m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.25m; top: 0.55m; depth: 0.50m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 4.65m; top: 0.35m; depth: 0.80m;}"
+  ]
+ },
+ {
+  "id": "ex-living_room-7",
+  "room_type": "living_room",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    5.4,
+    0
+   ],
+   [
+    5.4,
+    4.4
+   ],
+   [
+    0,
+    4.4
+   ]
+  ],
+  "max_objects": 9,
+  "door": [
+   0,
+   1.32
+  ],
+  "v3": [
+   "sofa wall=south at=2.75",
+   "coffee_table x=2.70 y=1.55 facing=north",
+   "tv_stand wall=north at=2.70",
+   "armchair x=4.30 y=1.55 facing=south",
+   "side_table x=1.25 y=0.35 facing=north",
+   "bookshelf wall=east at=2.25",
+   "cabinet wall=west at=2.65",
+   "plant x=0.35 y=0.25 facing=south",
+   "floor_lamp x=5.05 y=0.35 facing=south"
+  ],
+  "layout": [
+   "sofa {length: 2.20m; width: 0.90m; height: 0.85m; orientation: 0 degrees; left: 2.75m; top: 0.45m; depth: 0.42m;}",
+   "coffee_table {length: 1.20m; width: 0.60m; height: 0.45m; orientation: 0 degrees; left: 2.70m; top: 1.55m; depth: 0.23m;}",
+   "tv_stand {length: 1.50m; width: 0.40m; height: 0.50m; orientation: 180 degrees; left: 2.70m; top: 4.20m; depth: 0.25m;}",
+   "armchair {length: 0.80m; width: 0.80m; height: 0.90m; orientation: 180 degrees; left: 4.30m; top: 1.55m; depth: 0.45m;}",
+   "side_table {length: 0.50m; width: 0.50m; height: 0.55m; orientation: 0 degrees; left: 1.25m; top: 0.35m; depth: 0.28m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 270 degrees; left: 5.25m; top: 2.25m; depth: 0.90m;}",
+   "cabinet {length: 1.00m; width: 0.45m; height: 0.90m; orientation: 90 degrees; left: 0.23m; top: 2.65m; depth: 0.45m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.35m; top: 0.25m; depth: 0.50m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 5.05m; top: 0.35m; depth: 0.80m;}"
+  ]
+ },
+ {
+  "id": "ex-living_room-8",
+  "room_type": "living_room",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    6.0,
+    0
+   ],
+   [
+    6.0,
+    4.6
+   ],
+   [
+    0,
+    4.6
+   ]
+  ],
+  "max_objects": 9,
+  "door": [
+   6.0,
+   2.0
+  ],
+  "v3": [
+   "sofa wall=south at=2.95",
+   "coffee_table x=3.00 y=1.55 facing=north",
+   "tv_stand wall=north at=3.00",
+   "armchair x=4.60 y=1.55 facing=south",
+   "side_table x=1.55 y=0.35 facing=north",
+   "bookshelf wall=east at=3.25",
+   "cabinet wall=west at=2.25",
+   "plant x=0.35 y=0.35 facing=south",
+   "floor_lamp x=5.65 y=0.35 facing=south"
+  ],
+  "layout": [
+   "sofa {length: 2.20m; width: 0.90m; height: 0.85m; orientation: 0 degrees; left: 2.95m; top: 0.45m; depth: 0.42m;}",
+   "coffee_table {length: 1.20m; width: 0.60m; height: 0.45m; orientation: 0 degrees; left: 3.00m; top: 1.55m; depth: 0.23m;}",
+   "tv_stand {length: 1.50m; width: 0.40m; height: 0.50m; orientation: 180 degrees; left: 3.00m; top: 4.40m; depth: 0.25m;}",
+   "armchair {length: 0.80m; width: 0.80m; height: 0.90m; orientation: 180 degrees; left: 4.60m; top: 1.55m; depth: 0.45m;}",
+   "side_table {length: 0.50m; width: 0.50m; height: 0.55m; orientation: 0 degrees; left: 1.55m; top: 0.35m; depth: 0.28m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 270 degrees; left: 5.85m; top: 3.25m; depth: 0.90m;}",
+   "cabinet {length: 1.00m; width: 0.45m; height: 0.90m; orientation: 90 degrees; left: 0.23m; top: 2.25m; depth: 0.45m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.35m; top: 0.35m; depth: 0.50m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 5.65m; top: 0.35m; depth: 0.80m;}"
+  ]
+ },
+ {
+  "id": "ex-library-1",
+  "room_type": "library",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    3.2,
+    0
+   ],
+   [
+    3.2,
+    3.0
+   ],
+   [
+    0,
+    3.0
+   ]
+  ],
+  "max_objects": 10,
+  "door": [
+   0,
+   1.19
+  ],
+  "v3": [
+   "bookshelf wall=south at=1.15",
+   "bookshelf wall=south at=2.05",
+   "bookshelf wall=east at=1.45",
+   "reading_table x=1.60 y=1.50 facing=north",
+   "chair x=1.60 y=2.15 facing=south",
+   "chair x=1.60 y=0.85 facing=north",
+   "desk wall=north at=1.65",
+   "armchair x=2.75 y=2.55 facing=south",
+   "floor_lamp x=2.85 y=0.35 facing=south",
+   "plant x=0.35 y=2.65 facing=south"
+  ],
+  "layout": [
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 0 degrees; left: 1.15m; top: 0.15m; depth: 0.90m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 0 degrees; left: 2.05m; top: 0.15m; depth: 0.90m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 270 degrees; left: 3.05m; top: 1.45m; depth: 0.90m;}",
+   "reading_table {length: 1.60m; width: 0.80m; height: 0.75m; orientation: 0 degrees; left: 1.60m; top: 1.50m; depth: 0.38m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 180 degrees; left: 1.60m; top: 2.15m; depth: 0.45m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 0 degrees; left: 1.60m; top: 0.85m; depth: 0.45m;}",
+   "desk {length: 1.20m; width: 0.60m; height: 0.75m; orientation: 180 degrees; left: 1.65m; top: 2.70m; depth: 0.38m;}",
+   "armchair {length: 0.80m; width: 0.80m; height: 0.90m; orientation: 180 degrees; left: 2.75m; top: 2.55m; depth: 0.45m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 2.85m; top: 0.35m; depth: 0.80m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.35m; top: 2.65m; depth: 0.50m;}"
+  ]
+ },
+ {
+  "id": "ex-library-2",
+  "room_type": "library",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    3.6,
+    0
+   ],
+   [
+    3.6,
+    3.2
+   ],
+   [
+    0,
+    3.2
+   ]
+  ],
+  "max_objects": 10,
+  "door": [
+   3.6,
+   1.29
+  ],
+  "v3": [
+   "bookshelf wall=south at=1.35",
+   "bookshelf wall=south at=2.25",
+   "bookshelf wall=east at=2.55",
+   "reading_table x=1.80 y=1.60 facing=north",
+   "chair x=1.80 y=2.25 facing=south",
+   "chair x=1.80 y=0.95 facing=north",
+   "desk wall=north at=1.75",
+   "armchair x=2.85 y=2.75 facing=south",
+   "floor_lamp x=3.25 y=0.25 facing=south",
+   "plant x=0.35 y=2.85 facing=south"
+  ],
+  "layout": [
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 0 degrees; left: 1.35m; top: 0.15m; depth: 0.90m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 0 degrees; left: 2.25m; top: 0.15m; depth: 0.90m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 270 degrees; left: 3.45m; top: 2.55m; depth: 0.90m;}",
+   "reading_table {length: 1.60m; width: 0.80m; height: 0.75m; orientation: 0 degrees; left: 1.80m; top: 1.60m; depth: 0.38m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 180 degrees; left: 1.80m; top: 2.25m; depth: 0.45m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 0 degrees; left: 1.80m; top: 0.95m; depth: 0.45m;}",
+   "desk {length: 1.20m; width: 0.60m; height: 0.75m; orientation: 180 degrees; left: 1.75m; top: 2.90m; depth: 0.38m;}",
+   "armchair {length: 0.80m; width: 0.80m; height: 0.90m; orientation: 180 degrees; left: 2.85m; top: 2.75m; depth: 0.45m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 3.25m; top: 0.25m; depth: 0.80m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.35m; top: 2.85m; depth: 0.50m;}"
+  ]
+ },
+ {
+  "id": "ex-library-3",
+  "room_type": "library",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    4.0,
+    0
+   ],
+   [
+    4.0,
+    3.4
+   ],
+   [
+    0,
+    3.4
+   ]
+  ],
+  "max_objects": 10,
+  "door": [
+   0,
+   1.14
+  ],
+  "v3": [
+   "bookshelf wall=south at=1.55",
+   "bookshelf wall=south at=2.45",
+   "bookshelf wall=east at=1.65",
+   "reading_table x=2.00 y=1.70 facing=north",
+   "chair x=2.00 y=2.35 facing=south",
+   "chair x=2.00 y=1.05 facing=north",
+   "desk wall=north at=2.05",
+   "armchair x=3.55 y=2.95 facing=south",
+   "floor_lamp x=3.65 y=0.35 facing=south",
+   "plant x=0.35 y=3.05 facing=south"
+  ],
+  "layout": [
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 0 degrees; left: 1.55m; top: 0.15m; depth: 0.90m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 0 degrees; left: 2.45m; top: 0.15m; depth: 0.90m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 270 degrees; left: 3.85m; top: 1.65m; depth: 0.90m;}",
+   "reading_table {length: 1.60m; width: 0.80m; height: 0.75m; orientation: 0 degrees; left: 2.00m; top: 1.70m; depth: 0.38m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 180 degrees; left: 2.00m; top: 2.35m; depth: 0.45m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 0 degrees; left: 2.00m; top: 1.05m; depth: 0.45m;}",
+   "desk {length: 1.20m; width: 0.60m; height: 0.75m; orientation: 180 degrees; left: 2.05m; top: 3.10m; depth: 0.38m;}",
+   "armchair {length: 0.80m; width: 0.80m; height: 0.90m; orientation: 180 degrees; left: 3.55m; top: 2.95m; depth: 0.45m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 3.65m; top: 0.35m; depth: 0.80m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.35m; top: 3.05m; depth: 0.50m;}"
+  ]
+ },
+ {
+  "id": "ex-library-4",
+  "room_type": "library",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    4.2,
+    0
+   ],
+   [
+    4.2,
+    3.8
+   ],
+   [
+    0,
+    3.8
+   ]
+  ],
+  "max_objects": 10,
+  "door": [
+   4.2,
+   2.57
+  ],
+  "v3": [
+   "bookshelf wall=south at=1.65",
+   "bookshelf wall=south at=2.55",
+   "bookshelf wall=east at=1.35",
+   "reading_table x=2.10 y=1.90 facing=north",
+   "chair x=2.10 y=2.55 facing=south",
+   "chair x=2.10 y=1.25 facing=north",
+   "desk wall=north at=2.15",
+   "armchair x=3.05 y=3.35 facing=south",
+   "floor_lamp x=3.85 y=0.35 facing=south",
+   "plant x=0.35 y=3.45 facing=south"
+  ],
+  "layout": [
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 0 degrees; left: 1.65m; top: 0.15m; depth: 0.90m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 0 degrees; left: 2.55m; top: 0.15m; depth: 0.90m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 270 degrees; left: 4.05m; top: 1.35m; depth: 0.90m;}",
+   "reading_table {length: 1.60m; width: 0.80m; height: 0.75m; orientation: 0 degrees; left: 2.10m; top: 1.90m; depth: 0.38m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 180 degrees; left: 2.10m; top: 2.55m; depth: 0.45m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 0 degrees; left: 2.10m; top: 1.25m; depth: 0.45m;}",
+   "desk {length: 1.20m; width: 0.60m; height: 0.75m; orientation: 180 degrees; left: 2.15m; top: 3.50m; depth: 0.38m;}",
+   "armchair {length: 0.80m; width: 0.80m; height: 0.90m; orientation: 180 degrees; left: 3.05m; top: 3.35m; depth: 0.45m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 3.85m; top: 0.35m; depth: 0.80m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.35m; top: 3.45m; depth: 0.50m;}"
+  ]
+ },
+ {
+  "id": "ex-library-5",
+  "room_type": "library",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    4.6,
+    0
+   ],
+   [
+    4.6,
+    3.6
+   ],
+   [
+    0,
+    3.6
+   ]
+  ],
+  "max_objects": 10,
+  "door": [
+   3.9,
+   3.6
+  ],
+  "v3": [
+   "bookshelf wall=south at=1.85",
+   "bookshelf wall=south at=2.75",
+   "bookshelf wall=east at=1.75",
+   "reading_table x=2.30 y=1.80 facing=north",
+   "chair x=2.30 y=2.45 facing=south",
+   "chair x=2.30 y=1.15 facing=north",
+   "desk wall=north at=2.25",
+   "armchair x=3.95 y=2.35 facing=south",
+   "floor_lamp x=4.25 y=0.35 facing=south",
+   "plant x=0.35 y=3.25 facing=south"
+  ],
+  "layout": [
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 0 degrees; left: 1.85m; top: 0.15m; depth: 0.90m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 0 degrees; left: 2.75m; top: 0.15m; depth: 0.90m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 270 degrees; left: 4.45m; top: 1.75m; depth: 0.90m;}",
+   "reading_table {length: 1.60m; width: 0.80m; height: 0.75m; orientation: 0 degrees; left: 2.30m; top: 1.80m; depth: 0.38m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 180 degrees; left: 2.30m; top: 2.45m; depth: 0.45m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 0 degrees; left: 2.30m; top: 1.15m; depth: 0.45m;}",
+   "desk {length: 1.20m; width: 0.60m; height: 0.75m; orientation: 180 degrees; left: 2.25m; top: 3.30m; depth: 0.38m;}",
+   "armchair {length: 0.80m; width: 0.80m; height: 0.90m; orientation: 180 degrees; left: 3.95m; top: 2.35m; depth: 0.45m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 4.25m; top: 0.35m; depth: 0.80m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.35m; top: 3.25m; depth: 0.50m;}"
+  ]
+ },
+ {
+  "id": "ex-library-6",
+  "room_type": "library",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    5.0,
+    0
+   ],
+   [
+    5.0,
+    4.0
+   ],
+   [
+    0,
+    4.0
+   ]
+  ],
+  "max_objects": 10,
+  "door": [
+   0,
+   1.19
+  ],
+  "v3": [
+   "bookshelf wall=south at=2.05",
+   "bookshelf wall=south at=2.95",
+   "bookshelf wall=east at=2.05",
+   "reading_table x=2.50 y=2.00 facing=north",
+   "chair x=2.50 y=2.65 facing=south",
+   "chair x=2.50 y=1.35 facing=north",
+   "desk wall=north at=2.45",
+   "armchair x=4.55 y=3.55 facing=south",
+   "floor_lamp x=4.65 y=0.35 facing=south",
+   "plant x=0.35 y=3.65 facing=south"
+  ],
+  "layout": [
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 0 degrees; left: 2.05m; top: 0.15m; depth: 0.90m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 0 degrees; left: 2.95m; top: 0.15m; depth: 0.90m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 270 degrees; left: 4.85m; top: 2.05m; depth: 0.90m;}",
+   "reading_table {length: 1.60m; width: 0.80m; height: 0.75m; orientation: 0 degrees; left: 2.50m; top: 2.00m; depth: 0.38m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 180 degrees; left: 2.50m; top: 2.65m; depth: 0.45m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 0 degrees; left: 2.50m; top: 1.35m; depth: 0.45m;}",
+   "desk {length: 1.20m; width: 0.60m; height: 0.75m; orientation: 180 degrees; left: 2.45m; top: 3.70m; depth: 0.38m;}",
+   "armchair {length: 0.80m; width: 0.80m; height: 0.90m; orientation: 180 degrees; left: 4.55m; top: 3.55m; depth: 0.45m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 4.65m; top: 0.35m; depth: 0.80m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.35m; top: 3.65m; depth: 0.50m;}"
+  ]
+ },
+ {
+  "id": "ex-library-7",
+  "room_type": "library",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    5.4,
+    0
+   ],
+   [
+    5.4,
+    4.4
+   ],
+   [
+    0,
+    4.4
+   ]
+  ],
+  "max_objects": 10,
+  "door": [
+   5.4,
+   1.35
+  ],
+  "v3": [
+   "bookshelf wall=south at=2.25",
+   "bookshelf wall=south at=3.15",
+   "bookshelf wall=east at=2.65",
+   "reading_table x=2.70 y=2.20 facing=north",
+   "chair x=2.70 y=2.85 facing=south",
+   "chair x=2.70 y=1.55 facing=north",
+   "desk wall=north at=2.75",
+   "armchair x=4.95 y=3.95 facing=south",
+   "floor_lamp x=5.05 y=0.35 facing=south",
+   "plant x=0.35 y=4.05 facing=south"
+  ],
+  "layout": [
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 0 degrees; left: 2.25m; top: 0.15m; depth: 0.90m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 0 degrees; left: 3.15m; top: 0.15m; depth: 0.90m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 270 degrees; left: 5.25m; top: 2.65m; depth: 0.90m;}",
+   "reading_table {length: 1.60m; width: 0.80m; height: 0.75m; orientation: 0 degrees; left: 2.70m; top: 2.20m; depth: 0.38m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 180 degrees; left: 2.70m; top: 2.85m; depth: 0.45m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 0 degrees; left: 2.70m; top: 1.55m; depth: 0.45m;}",
+   "desk {length: 1.20m; width: 0.60m; height: 0.75m; orientation: 180 degrees; left: 2.75m; top: 4.10m; depth: 0.38m;}",
+   "armchair {length: 0.80m; width: 0.80m; height: 0.90m; orientation: 180 degrees; left: 4.95m; top: 3.95m; depth: 0.45m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 5.05m; top: 0.35m; depth: 0.80m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.35m; top: 4.05m; depth: 0.50m;}"
+  ]
+ },
+ {
+  "id": "ex-library-8",
+  "room_type": "library",
+  "floor_plan": [
+   [
+    0,
+    0
+   ],
+   [
+    6.0,
+    0
+   ],
+   [
+    6.0,
+    4.6
+   ],
+   [
+    0,
+    4.6
+   ]
+  ],
+  "max_objects": 10,
+  "door": [
+   0,
+   2.21
+  ],
+  "v3": [
+   "bookshelf wall=south at=2.55",
+   "bookshelf wall=south at=3.45",
+   "bookshelf wall=east at=2.25",
+   "reading_table x=3.00 y=2.30 facing=north",
+   "chair x=3.00 y=2.95 facing=south",
+   "chair x=3.00 y=1.65 facing=north",
+   "desk wall=north at=2.95",
+   "armchair x=5.55 y=4.15 facing=south",
+   "floor_lamp x=5.65 y=0.35 facing=south",
+   "plant x=0.35 y=4.25 facing=south"
+  ],
+  "layout": [
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 0 degrees; left: 2.55m; top: 0.15m; depth: 0.90m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 0 degrees; left: 3.45m; top: 0.15m; depth: 0.90m;}",
+   "bookshelf {length: 0.80m; width: 0.30m; height: 1.80m; orientation: 270 degrees; left: 5.85m; top: 2.25m; depth: 0.90m;}",
+   "reading_table {length: 1.60m; width: 0.80m; height: 0.75m; orientation: 0 degrees; left: 3.00m; top: 2.30m; depth: 0.38m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 180 degrees; left: 3.00m; top: 2.95m; depth: 0.45m;}",
+   "chair {length: 0.50m; width: 0.50m; height: 0.90m; orientation: 0 degrees; left: 3.00m; top: 1.65m; depth: 0.45m;}",
+   "desk {length: 1.20m; width: 0.60m; height: 0.75m; orientation: 180 degrees; left: 2.95m; top: 4.30m; depth: 0.38m;}",
+   "armchair {length: 0.80m; width: 0.80m; height: 0.90m; orientation: 180 degrees; left: 5.55m; top: 4.15m; depth: 0.45m;}",
+   "floor_lamp {length: 0.40m; width: 0.40m; height: 1.60m; orientation: 180 degrees; left: 5.65m; top: 0.35m; depth: 0.80m;}",
+   "plant {length: 0.40m; width: 0.40m; height: 1.00m; orientation: 180 degrees; left: 0.35m; top: 4.25m; depth: 0.50m;}"
+  ]
+ }
+]

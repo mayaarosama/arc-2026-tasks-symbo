@@ -14,6 +14,8 @@ timeout_grace_seconds: 15
 # A worker that cannot be polled for this long is treated as unreachable.
 unreachable_after_seconds: 6
 
+# "Load this task's model" first unloads every other task's model on every machine, so only the
+# chosen task is in RAM / VRAM. A machine with  keep_other_tasks: true  keeps them loaded.
 machines:
   - id: dgx
     label: "DGX H200"
@@ -29,7 +31,6 @@ machines:
     label: "Workstation"
     hardware: "1 GPU · 16 GB VRAM"
     color: "#4aa8ff"
-    one_task_at_a_time: true   # 16 GB: "Prepare" unloads the other task's worker first
     workers:
       t2i: http://workstation.local:8101
       i23d: http://workstation.local:8102
@@ -40,7 +41,6 @@ machines:
     label: "CPU only"
     hardware: "No GPU · 16 GB RAM"
     color: "#f0a640"
-    one_task_at_a_time: true
     show_full_recording: true  # time up / stopped / down: show the full rehearsal run + its time
     workers:
       t2i: http://cpu.local:8101

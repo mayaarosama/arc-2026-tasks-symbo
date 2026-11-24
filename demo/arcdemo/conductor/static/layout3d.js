@@ -10,7 +10,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 const ASSETS = new URL("./assets/furniture/", import.meta.url);
-const WALL_H = 1.1, WALL_T = 0.08, DROP_MS = 550;
+const WALL_H = 1.1, WALL_T = 0.08, DROP_MS = 550, MOVE_MS = 700;   // a fixed object slides over MOVE_MS
 const BAD = 0xff5d5d;
 
 // Furniture type -> model file, plus small props set on top ("at" = [along the front, towards the
@@ -176,8 +176,8 @@ class View {
     this.sun.target.position.copy(this.centre);
   }
 
-  async add(key, o) {
-    const rec = { group: new THREE.Group(), born: performance.now(), o, ready: false };
+  async add(key, o, from) {   // from: where a fixed object was, so it slides rather than drops in
+    const rec = { group: new THREE.Group(), born: performance.now(), o, ready: false, pose: pose(o), from };
     this.items.set(key, rec);
     const g = await furniture(o);
     if (this.items.get(key) !== rec) return;     // the room moved on while it loaded
@@ -214,7 +214,15 @@ class View {
     const objs = visible(round, c);
     const want = new Set(objs.map((o) => `${o.room || 0}-${o.i}`));
     for (const [k, rec] of this.items) if (!want.has(k)) { this.scene.remove(rec.group); this.items.delete(k); }
-    for (const o of objs) { const k = `${o.room || 0}-${o.i}`; if (!this.items.has(k)) this.add(k, o); }
+    for (const o of objs) {
+      const k = `${o.room || 0}-${o.i}`, rec = this.items.get(k);
+      if (!rec) this.add(k, o);
+      else if (rec.pose !== pose(o)) {        // the model fixed it: rebuild at the new pose, sliding from the old
+        const from = rec.ready ? rec.group.position.clone().setY(0) : null;
+        this.scene.remove(rec.group);
+        this.add(k, o, from);
+      }
+    }
 
     // camera: low and only slightly turned, so the room spreads across the (wide, short) cell; slow sway
     const now = performance.now();
@@ -245,9 +253,14 @@ class View {
       w.mesh.scale.y = near ? 0.08 : 1;
       w.mesh.position.y = (near ? 0.08 : 1) * WALL_H / 2;
     }
-    // drop-in animation
+    // drop-in animation; a fixed object slides from where it was instead
     for (const rec of this.items.values()) {
       if (!rec.ready) continue;
+      if (rec.from) {
+        const k = Math.min(1, (now - rec.born) / MOVE_MS), ease = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+        rec.group.position.set(rec.from.x + (rec.o.x - rec.from.x) * ease, 0, rec.from.z + (-rec.o.y - rec.from.z) * ease);
+        continue;
+      }
       const k = Math.min(1, (now - rec.born) / DROP_MS), ease = 1 - Math.pow(1 - k, 3);
       rec.group.position.y = (1 - ease) * 1.6;
     }
@@ -274,7 +287,7 @@ class View {
     for (const l of list) {
       const el = document.createElement("span");
       el.className = "lbl" + (l.door ? " door" : "") + (l.bad ? " bad" : "") + (l.newest ? " new" : "");
-      el.textContent = l.door ? "door" : `${l.o.i + 1} ${l.o.cls.replace(/_/g, " ")}${l.bad ? " !" : ""}`;
+      el.textContent = l.door ? "door" : `${l.o.i + 1} ${l.o.cls.replace(/_/g, " ")}${window.LayoutCanvas.mark(l.o)}`;
       const w = el.textContent.length * 7 + 10, h = 18;
       let y = l.y;
       for (let k = 0; k < 6 && taken.some((t) => l.x - w / 2 < t[2] && t[0] < l.x + w / 2 && y - h < t[3] && t[1] < y); k++) y -= h + 2;
@@ -287,16 +300,10 @@ class View {
   }
 }
 
-function visible(round, c) {
-  let objs = c.objects || [];
-  if (c.mode === "REPLAY" && !c.recorded && window.Demo) {
-    const t = Demo.elapsed(round);
-    objs = objs.filter((o) => o.t == null || o.t <= t);
-  }
-  if (!objs.length) return [];
-  const room = Math.max(...objs.map((o) => o.room || 0));
-  return objs.filter((o) => (o.room || 0) === room);
-}
+function visible(round, c) { return window.LayoutCanvas.visible(round, c); }   // one rule for both views
+
+// what changes when the model fixes an object: where it stands, which way it faces, its flags
+const pose = (o) => `${o.x}|${o.y}|${o.rot}|${(o.issues || []).join(",")}`;
 
 function webgl() {
   try { const c = document.createElement("canvas"); return !!(c.getContext("webgl2") || c.getContext("webgl")); }

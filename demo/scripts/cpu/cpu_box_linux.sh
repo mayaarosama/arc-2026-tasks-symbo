@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# CPU box, Linux: set up, start, stop and check the three workers (t2i :8101, i23d :8102, music :8103).
+# CPU box, Linux: set up, start, stop and check the five workers
+# (t2i :8101, i23d :8102, music :8103, llm :8104, layout :8105; llm and layout share .venv-llm).
 #
-#   scripts/cpu/cpu_box_linux.sh setup    # venvs, CPU torch, SF3D, weights, offline check  (needs network)
-#   scripts/cpu/cpu_box_linux.sh start    # all workers, offline, in the background
-#   scripts/cpu/cpu_box_linux.sh status   # /health of each
+#   scripts/cpu/cpu_box_linux.sh setup      # venvs, CPU torch, SF3D, llama.cpp, weights, offline check (needs network)
+#   scripts/cpu/cpu_box_linux.sh start      # all workers, offline, in the background
+#   scripts/cpu/cpu_box_linux.sh status     # /health of each
 #   scripts/cpu/cpu_box_linux.sh stop
+#   scripts/cpu/cpu_box_linux.sh conductor  # the machine that runs the conductor (operator laptop): its venv
+#                                           # and the cut-out model for uploaded pictures (needs network)
 #
 # Secrets come from a file (default: ../config.txt next to demo/), never from arguments:
 #   ARC_DEMO_TOKEN=<shared secret, same on every machine>
@@ -22,10 +25,11 @@ SF3D_DIR="$DEMO/third_party/stable-fast-3d"
 SA3_DIR="$DEMO/third_party/stable-audio-3"
 SA3_TORCH="2.7.1"                 # stable-audio-3 pins torch + torchaudio to this version
 TORCH_INDEX="https://download.pytorch.org/whl/cpu"
-PORTS=(t2i:8101 i23d:8102 music:8103)
+PORTS=(t2i:8101 i23d:8102 music:8103 llm:8104 layout:8105)
 cd "$DEMO"
 mkdir -p results
 
+venv_of() { case "$1" in llm|layout) echo .venv-llm ;; *) echo ".venv-$1" ;; esac; }   # layout = llm env
 run()  { echo "+ $*"; "$@"; }
 warn() { echo "WARNING: $*" >&2; }
 die()  { echo "ERROR: $*" >&2; exit 1; }
@@ -95,10 +99,18 @@ setup() {
     run "$(vpy .venv-music)" -m pip install -q -r requirements/music.txt
     run "$(vpy .venv-music)" -m pip install -q --no-deps -e "$SA3_DIR"
 
+    echo "== language-model env (.venv-llm): no torch; the model runs in llama.cpp's llama-server (llm + layout)"
+    [ -d .venv-llm ] || run "$PYTHON" -m venv .venv-llm
+    run "$(vpy .venv-llm)" -m pip install -q --upgrade pip
+    run "$(vpy .venv-llm)" -m pip install -q -r requirements/llm.txt
+    run "$(vpy .venv-llm)" scripts/cpu/fetch_llama_cpp.py          # the pinned CPU release, third_party/llama.cpp/bin
+
     echo "== weights (HF_TOKEN from the secrets file)"
     run "$(vpy .venv-t2i)" scripts/download_weights.py --machine cpu --task t2i
     run "$(vpy .venv-i23d)" scripts/download_weights.py --machine cpu --task i23d
     run "$(vpy .venv-music)" scripts/download_weights.py --machine cpu --task music
+    run "$(vpy .venv-llm)" scripts/download_weights.py --machine cpu --task llm      # Qwen3.5 4B, one GGUF file
+    run "$(vpy .venv-llm)" scripts/download_weights.py --machine cpu --task layout   # the same file: already there
 
     echo "== this machine"
     run "$(vpy .venv-t2i)" scripts/cpu/check_cpu.py
@@ -107,7 +119,20 @@ setup() {
     run "$(vpy .venv-t2i)" scripts/verify_offline.py --config "$WORKER_CONFIG" --task t2i
     PYTHONPATH="$SF3D_DIR" run "$(vpy .venv-i23d)" scripts/verify_offline.py --config "$WORKER_CONFIG" --task i23d
     run "$(vpy .venv-music)" scripts/verify_offline.py --config "$WORKER_CONFIG" --task music
-    echo "setup done. Firewall, if active:  sudo ufw allow 8101:8103/tcp"
+    run "$(vpy .venv-llm)" scripts/verify_offline.py --config "$WORKER_CONFIG" --task llm
+    run "$(vpy .venv-llm)" scripts/verify_offline.py --config "$WORKER_CONFIG" --task layout
+    echo "setup done. Firewall, if active:  sudo ufw allow 8101:8105/tcp"
+}
+
+conductor() {   # set up the conductor on this machine: its venv and the cut-out model for uploaded pictures
+    exec > >(tee -a "results/setup-conductor-$(date +%Y%m%d-%H%M%S).log") 2>&1
+    command -v "$PYTHON" >/dev/null || die "$PYTHON not found (set PYTHON=python3.10 or install 3.11)"
+    [ -d .venv ] || run "$PYTHON" -m venv .venv
+    run "$(vpy .venv)" -m pip install -q --upgrade pip
+    run "$(vpy .venv)" -m pip install -q -r requirements/conductor.txt
+    run "$(vpy .venv)" scripts/download_weights.py --cutout          # U2-Net, 176 MB -> weights/u2net/
+    run "$(vpy .venv)" scripts/verify_offline.py --cutout            # runs on the CPU; on a GPU with onnxruntime-gpu
+    echo "conductor ready:  $(vpy .venv) -m arcdemo.conductor --config config/demo.yaml"
 }
 
 health() {   # $1 = port; prints the /health JSON or fails
@@ -120,7 +145,7 @@ start() {
     export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 SF3D_USE_CPU=1
     local entry task port venv pidf
     for entry in "${PORTS[@]}"; do
-        task="${entry%%:*}"; port="${entry##*:}"; venv=".venv-$task"; pidf="results/worker-$task.pid"
+        task="${entry%%:*}"; port="${entry##*:}"; venv="$(venv_of "$task")"; pidf="results/worker-$task.pid"
         if [ -f "$pidf" ] && kill -0 "$(cat "$pidf")" 2>/dev/null; then
             echo "$task already running (pid $(cat "$pidf"))"; continue
         fi
@@ -157,6 +182,6 @@ status() {
 }
 
 case "${1:-}" in
-    setup|start|stop|status) "$1" ;;
-    *) sed -n '2,15p' "$0"; exit 2 ;;
+    setup|start|stop|status|conductor) "$1" ;;
+    *) sed -n '2,17p' "$0"; exit 2 ;;
 esac

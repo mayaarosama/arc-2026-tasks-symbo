@@ -31,13 +31,55 @@ TINY = {"t2i": {"prompt": "a red cube on a table", "width": 512, "height": 512, 
                    "door": [0.6, 0], "max_objects": 3, "max_tokens": 120}}
 
 
+def verify_cutout() -> int:
+    """The conductor's background removal for uploaded pictures (arcdemo/imageprep.py): the model is on
+    disk, onnxruntime loads it, and it finds a known object's outline in a stage picture put on a
+    plain background and saved as JPEG (no network involved at any point)."""
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    from arcdemo import imageprep
+    path = imageprep.cutout_model_path()
+    if path is None:
+        print("FAIL  cutout                 model not found (python scripts/download_weights.py --cutout)")
+        return 1
+    try:
+        src = Image.open(ROOT / "data/i23d/inputs/i23d-03.png").convert("RGBA").resize((1024, 1024))
+        bg = Image.new("RGBA", src.size, (200, 200, 205, 255))
+        bg.alpha_composite(src)
+        buf = io.BytesIO()
+        bg.convert("RGB").save(buf, "JPEG", quality=90)
+        t = time.time()
+        prep = imageprep.prepare(buf.getvalue())
+        seconds = time.time() - t
+        mask = np.asarray(imageprep.u2net_mask(bg.convert("RGB"))) >= 128
+        truth = np.asarray(src.getchannel("A")) >= 128
+        iou = float((mask & truth).sum() / (mask | truth).sum())
+    except Exception as e:  # noqa: BLE001 — any failure is the answer
+        print(f"FAIL  cutout                 {type(e).__name__}: {e}")
+        return 1
+    ok = prep.cutout == "u2net" and iou > 0.9
+    print(f"{'PASS' if ok else 'FAIL'}  cutout                 outline match {iou:.3f} · {seconds:.1f}s · "
+          f"{imageprep.cutout_device()} · {path}")
+    return 0 if ok else 1
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", required=True, help="worker config, e.g. config/worker-dgx.yaml")
-    ap.add_argument("--task", required=True)
+    ap.add_argument("--config", help="worker config, e.g. config/worker-dgx.yaml")
+    ap.add_argument("--task")
     ap.add_argument("--demo", default="config/demo.yaml")
     ap.add_argument("--model", action="append", help="check only these models.yaml keys (repeatable)")
+    ap.add_argument("--cutout", action="store_true",
+                    help="instead: the conductor's background removal for uploaded pictures")
     a = ap.parse_args()
+    if a.cutout:
+        os.chdir(ROOT)
+        return verify_cutout()
+    if not a.config or not a.task:
+        ap.error("give --config and --task (or --cutout)")
     cfg = load_worker_config(str(Path(a.config).resolve()), [a.task])
     os.chdir(ROOT)
     setup_logging(Path(cfg["results_dir"]) / f"verify-{a.task}.log")

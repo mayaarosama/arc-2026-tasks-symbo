@@ -191,15 +191,17 @@ def messages(spec: dict) -> list[dict]:
     return msgs + [{"role": "user", "content": describe_room(spec)}]
 
 
-def grammar(spec: dict) -> str:
-    """GBNF: 1..max_objects lines; wall pieces only in the wall form with this room's wall names,
-    free pieces only in the x/y form. Syntax and vocabulary only, never positions."""
+def grammar(spec: dict, lines: Optional[int] = None, at_least: int = 1) -> str:
+    """GBNF: at_least..lines lines (default 1..max_objects; a continuation after kept lines may
+    write none); wall pieces only in the wall form with this room's wall names, free pieces only
+    in the x/y form. Syntax and vocabulary only, never positions."""
     vocab = list(dict.fromkeys(ROOMS[spec["room_type"]]))
     wcls = [c for c in vocab if c in WALL_PIECES]
     fcls = [c for c in vocab if c not in WALL_PIECES]
     names = list(walls(spec["floor_plan"]))
     alt = [x for x, ok in (("wline", wcls and names), ("fline", fcls)) if ok]
-    rules = [f"root ::= line{{1,{spec['max_objects']}}}", "line ::= " + " | ".join(alt)]
+    top = spec["max_objects"] if lines is None else lines
+    rules = [f"root ::= line{{{at_least},{top}}}", "line ::= " + " | ".join(alt)]
     if "wline" in alt:
         rules += ['wline ::= wcls " wall=" wall " at=" num "\\n"',
                   "wcls ::= " + " | ".join(f'"{c}"' for c in wcls),
@@ -264,30 +266,308 @@ def _near_edge(px: float, py: float, poly: list, tol: float) -> bool:
     return False
 
 
-def check(o: dict, earlier: list[dict], spec: dict) -> list[str]:
-    """Problems with one object, given those placed before it in the same room."""
+def _edge_dist(px: float, py: float, poly: list) -> float:
+    best = float("inf")
+    for i in range(len(poly)):
+        (x1, y1), (x2, y2) = poly[i], poly[(i + 1) % len(poly)]
+        dx, dy = x2 - x1, y2 - y1
+        t = max(0.0, min(1.0, ((px - x1) * dx + (py - y1) * dy) / ((dx * dx + dy * dy) or 1)))
+        best = min(best, ((px - x1 - t * dx) ** 2 + (py - y1 - t * dy) ** 2) ** 0.5)
+    return best
+
+
+def measure(o: dict, earlier: list[dict], spec: dict) -> list[tuple[str, float, str]]:
+    """Every problem with one object, given those placed before it: (kind, amount, plain words).
+    amount: metres outside the outline / metres inside the door's clearance / m² of overlap."""
     poly = spec["floor_plan"]
     x0, y0, x1, y1 = footprint(o)
-    issues = []
-    if not all(_inside(px, py, poly) or _near_edge(px, py, poly, WALL_TOLERANCE)
-               for px, py in ((x0, y0), (x1, y0), (x1, y1), (x0, y1))):
-        issues.append("outside")
+    out: list[tuple[str, float, str]] = []
+    corners = ((x0, y0), (x1, y0), (x1, y1), (x0, y1))
+    beyond = [_edge_dist(px, py, poly) for px, py in corners
+              if not (_inside(px, py, poly) or _near_edge(px, py, poly, WALL_TOLERANCE))]
+    if beyond:
+        out.append(("outside", max(beyond), f"it sticks out of the room by {max(beyond):.2f} m"))
     door = spec.get("door")
     if door:
         cx, cy = min(max(door[0], x0), x1), min(max(door[1], y0), y1)   # nearest footprint point
-        if (cx - door[0]) ** 2 + (cy - door[1]) ** 2 < DOOR_CLEARANCE ** 2:
-            issues.append("door")
+        dist = ((cx - door[0]) ** 2 + (cy - door[1]) ** 2) ** 0.5
+        if dist < DOOR_CLEARANCE:
+            out.append(("door", DOOR_CLEARANCE - dist,
+                        f"it comes within {dist:.2f} m of the door at ({door[0]:g},{door[1]:g}); "
+                        f"keep {DOOR_CLEARANCE:.2f} m clear"))
     area = (x1 - x0) * (y1 - y0)
     for e in earlier:
         a0, b0, a1, b1 = footprint(e)
         ov = max(0.0, min(x1, a1) - max(x0, a0)) * max(0.0, min(y1, b1) - max(y0, b0))
         if ov > OVERLAP_SHARE * max(1e-6, min(area, (a1 - a0) * (b1 - b0))):
-            issues.append("overlap")
-            break
-    return issues
+            who = f"{e['i'] + 1} {e['cls']}" if "i" in e else e["cls"]
+            out.append(("overlap", ov, f"it overlaps {who} by {ov:.2f} m²"))
+    return out
+
+
+def check(o: dict, earlier: list[dict], spec: dict) -> list[str]:
+    """Problems with one object, given those placed before it in the same room."""
+    return list(dict.fromkeys(kind for kind, _, _ in measure(o, earlier, spec)))
+
+
+# ------------------------------------------------------------------ self-correction ---------
+# The model fixes its own mistakes; the code only measures. Room cost C (0 = nothing flagged):
+#   FLAG_COST per problem (so fewer problems always wins: three small ones never beat one big one)
+#   + metres outside the outline + metres inside the door's clearance + m² of flagged overlap
+#   + REMOVE_COST per object taken out (less than a flag, so dropping a piece that fits nowhere is
+#     allowed, but more than nothing, so emptying the room is never the cheapest "fix")
+#   + MUST_HAVE_COST if the room's main piece is missing.
+FLAG_COST = 1.0
+REMOVE_COST = 0.5
+MUST_HAVE_COST = 2.0
+MUST_HAVE = {"bedroom": {"double_bed", "single_bed"}, "living_room": {"sofa"}, "library": {"bookshelf"},
+             "study": {"desk"}, "dining_room": {"dining_table"}}
+
+
+def problem_cost(o: dict, earlier: list[dict], spec: dict) -> float:
+    return sum(FLAG_COST + amount for _, amount, _ in measure(o, earlier, spec))
+
+
+def room_cost(active: list[dict], spec: dict, first_count: int) -> float:
+    """C for the objects still in the room, in placement order (a pair's overlap counts once,
+    on the later object), against the number the model first wrote."""
+    c = sum(problem_cost(o, active[:k], spec) for k, o in enumerate(active))
+    c += REMOVE_COST * max(0, first_count - len(active))
+    must = MUST_HAVE.get(spec["room_type"], set())
+    if must and not any(o["cls"] in must for o in active):
+        c += MUST_HAVE_COST
+    return round(c, 4)
+
+
+def line_of(o: dict) -> str:
+    """An object back as the line the model writes (the inverse of parse_line)."""
+    if o.get("wall"):
+        return f"{o['cls']} wall={o['wall']} at={o['at']:.2f}"
+    dirs = {v: k for k, v in FACING.items()}
+    return f"{o['cls']} x={o['x']:.2f} y={o['y']:.2f} facing={dirs.get(o['rot'], 'north')}"
+
+
+def continue_messages(spec: dict, kept: list[str]) -> list[dict]:
+    """The room prompt with the reply so far prefilled: the model goes on after the kept lines."""
+    msgs = messages(spec)
+    return msgs + [{"role": "assistant", "content": "".join(kept)}] if kept else msgs
+
+
+def repair_messages(spec: dict, kept: list[str], bad_line: str, n: int, problems: list[str]) -> list[dict]:
+    cls = bad_line.split()[0]
+    ask = (f"Line {n}, \"{bad_line.strip()}\", has a problem: {'; '.join(problems)}. "
+           f"Write line {n} again: the same {cls.replace('_', ' ')}, placed where it fits. "
+           "Write only that one line.")
+    return messages(spec) + [{"role": "assistant", "content": "".join(kept) + bad_line.rstrip("\n") + "\n"},
+                             {"role": "user", "content": ask}]
+
+
+def review_messages(spec: dict, kept: list[str], active: list[dict], notes: list[str]) -> list[dict]:
+    """After the room is written: the numbered room with every problem, and the edit commands."""
+    rows = []
+    for k, o in enumerate(active):
+        probs = [txt for _, _, txt in measure(o, active[:k], spec)]
+        rows.append(f"{o['i'] + 1} {line_of(o)}" + (f"  <- problem: {'; '.join(probs)}" if probs else "  ok"))
+    missing = [m for m in MUST_HAVE.get(spec["room_type"], set())]
+    ask = ["Check the room you wrote. Here it is, numbered, with the problems found:", *rows, ""]
+    if missing and not any(o["cls"] in missing for o in active):
+        ask.append(f"The room has no {' or '.join(sorted(missing))}.")
+    ask += notes
+    ask += ["Fix the problems with edits, one per line:",
+            "move <n> wall=<wall name> at=<at>      (a wall piece, to a wall)",
+            "move <n> x=<x> y=<y> facing=<north|east|south|west>      (a free piece)",
+            "remove <n>      (only if it fits nowhere)",
+            "Then write done. Change only what fixes a problem."]
+    return messages(spec) + [{"role": "assistant", "content": "".join(kept)},
+                             {"role": "user", "content": "\n".join(ask)}]
+
+
+def _rules_num_dir() -> list[str]:
+    return ['num ::= [0-9] [0-9]? "." [0-9] [0-9]', 'dir ::= "north" | "east" | "south" | "west"']
+
+
+def repair_grammar(spec: dict, cls: str) -> str:
+    """Exactly one line, for the same object class (the fix may not swap the object for another)."""
+    names = list(walls(spec["floor_plan"]))
+    if cls in WALL_PIECES and names:
+        return "\n".join([f'root ::= "{cls} wall=" wall " at=" num "\\n"',
+                          "wall ::= " + " | ".join(f'"{n}"' for n in names)] + _rules_num_dir())
+    return "\n".join([f'root ::= "{cls} x=" num " y=" num " facing=" dir "\\n"'] + _rules_num_dir())
+
+
+def edit_grammar(spec: dict, active: list[dict], max_edits: int = 6) -> str:
+    """move / remove for the numbers in the room (wall pieces move along walls, free pieces on the
+    floor), then done. Syntax only: which object and where are the model's choice."""
+    names = list(walls(spec["floor_plan"]))
+    widx = [str(o["i"] + 1) for o in active if o["cls"] in WALL_PIECES] if names else []
+    fidx = [str(o["i"] + 1) for o in active if o["cls"] not in WALL_PIECES]
+    alt, rules = ["remove"], []
+    if widx:
+        alt.append("wmove")
+        rules += ['wmove ::= "move " widx " wall=" wall " at=" num "\\n"',
+                  "widx ::= " + " | ".join(f'"{n}"' for n in widx),
+                  "wall ::= " + " | ".join(f'"{n}"' for n in names)]
+    if fidx:
+        alt.append("fmove")
+        rules += ['fmove ::= "move " fidx " x=" num " y=" num " facing=" dir "\\n"',
+                  "fidx ::= " + " | ".join(f'"{n}"' for n in fidx)]
+    rules += ['remove ::= "remove " idx "\\n"',
+              "idx ::= " + " | ".join(f'"{o["i"] + 1}"' for o in active)]
+    return "\n".join([f'root ::= edit{{0,{max_edits}}} "done\\n"', "edit ::= " + " | ".join(alt)]
+                     + rules + _rules_num_dir())
+
+
+MOVE_WALL = re.compile(r"^\s*move\s+(\d+)\s+(wall=\S+\s+at=\S+)\s*$")
+MOVE_FREE = re.compile(r"^\s*move\s+(\d+)\s+(x=\S+\s+y=\S+\s+facing=\S+)\s*$")
+REMOVE = re.compile(r"^\s*remove\s+(\d+)\s*$")
+
+
+def parse_edit(line: str, active: list[dict], spec: dict) -> Optional[tuple]:
+    """("move", object, new placed object) | ("remove", object) | ("done",) | None"""
+    if line.strip() == "done":
+        return ("done",)
+    by_n = {o["i"] + 1: o for o in active}
+    m, wall = MOVE_WALL.match(line), True
+    if not m:
+        m, wall = MOVE_FREE.match(line), False
+    if m:
+        o = by_n.get(int(m.group(1)))
+        if o is None or (o["cls"] in WALL_PIECES) != wall:   # wall pieces move to walls, free pieces on the floor
+            return None
+        new = parse_line(f"{o['cls']} {m.group(2)}", spec)
+        return ("move", o, new) if new else None
+    m = REMOVE.match(line)
+    if m and int(m.group(1)) in by_n:
+        return ("remove", by_n[int(m.group(1))])
+    return None
 
 
 def summarise(objects: list[dict]) -> dict:
-    flags = [i for o in objects for i in o.get("issues", [])]
-    return {"objects": len(objects), "outside": flags.count("outside"), "overlap": flags.count("overlap"),
-            "door": flags.count("door"), "clean": sum(1 for o in objects if not o.get("issues"))}
+    """Counts for the finished room (removed objects excluded). With self-correction, also what the
+    model's first pass looked like and how many of its fixes were kept."""
+    active = [o for o in objects if o.get("removed") is None]
+    flags = [i for o in active for i in o.get("issues", [])]
+    out = {"objects": len(active), "outside": flags.count("outside"), "overlap": flags.count("overlap"),
+           "door": flags.count("door"), "clean": sum(1 for o in active if not o.get("issues"))}
+    if any("history" in o or o.get("removed") is not None for o in objects):
+        out.update(first_flagged=sum(1 for o in objects if (o.get("history") or [o])[0].get("issues")),
+                   fixes_tried=sum(o.get("tries", 0) for o in objects),
+                   fixed=sum(1 for o in active if o.get("fixes") and not o.get("issues")),      # now clean
+                   improved=sum(1 for o in active if o.get("fixes") and o.get("issues")),   # better, still flagged
+                   removed=sum(1 for o in objects if o.get("removed") is not None))
+    return out
+
+
+# ------------------------------------------------------------------ LayoutGPT variant ---------
+# LayoutGPT (Feng et al., NeurIPS 2023; github.com/UCSB-AI/LayoutGPT, MIT licence), 3D scenes, run
+# on our local model instead of GPT-4. Kept as published where it matters:
+#   - its instruction, and its CSS-style line: category {length; width; height; orientation (degrees);
+#     left; top; depth}, sizes and the object's centre, from the room's min corner (depth = height
+#     of the centre above the floor);
+#   - its condition: room type and "max length / max width" only. The outline, the door and the
+#     walls are NOT written into the prompt (as published);
+#   - k-similar examples: the K rooms of the same type whose 64x64 floor masks differ least (mean
+#     squared difference), shown as user "Condition: ... Layout:" / assistant lines.
+# Changed: metres (their metre mode); our example rooms (data/layout/exemplars.json, built by
+# scripts/build_layout_exemplars.py) instead of 3D-FRONT, which needs a signed licence; K=4 (not 8)
+# so a prompt fits llama-server's 4,096-token slot; the stage's greedy decoding, not GPT-4 at 0.7.
+# Sizes the model writes are kept on the object (written_size); the checks and the stage use the
+# standard sizes, as for v3.1, so the comparison is about where things go. A grammar fixes the
+# line's syntax and the room's vocabulary only, as in v3.1.
+LAYOUTGPT_K = 4
+EXEMPLARS_PATH = "data/layout/exemplars.json"
+CSS_LINE = re.compile(
+    r"^\s*([a-z_]+)\s*\{length:\s*(\d+(?:\.\d+)?)m;\s*width:\s*(\d+(?:\.\d+)?)m;\s*height:\s*(\d+(?:\.\d+)?)m;"
+    r"\s*orientation:\s*(-?\d+)\s*degrees;\s*left:\s*(-?\d+(?:\.\d+)?)m;\s*top:\s*(-?\d+(?:\.\d+)?)m;"
+    r"\s*depth:\s*(-?\d+(?:\.\d+)?)m;\s*\}\s*$")
+ROOM_NAME = {"living_room": "living room", "dining_room": "dining room"}
+_EXEMPLARS: Optional[list[dict]] = None
+
+
+def css_line(o: dict) -> str:
+    return (f"{o['cls']} {{length: {o['w']:.2f}m; width: {o['d']:.2f}m; height: {o['h']:.2f}m; "
+            f"orientation: {int(o['rot'])} degrees; left: {o['x']:.2f}m; top: {o['y']:.2f}m; "
+            f"depth: {o['h'] / 2:.2f}m;}}")
+
+
+def parse_css(line: str, spec: dict) -> Optional[dict]:
+    """A LayoutGPT line -> the same placed object as parse_line gives (standard size; facing snapped
+    to the nearest quarter turn), with the model's own sizes kept as written_size."""
+    m = CSS_LINE.match(line)
+    if not m or m.group(1) not in set(ROOMS[spec["room_type"]]):
+        return None
+    cls = m.group(1)
+    w, d, h = FURNITURE[cls]
+    rot = (round(int(m.group(5)) / 90) * 90) % 360
+    return {"cls": cls, "x": float(m.group(6)), "y": float(m.group(7)), "w": w, "d": d, "h": h, "rot": rot,
+            "written_size": [float(m.group(2)), float(m.group(3)), float(m.group(4))], "css": line.strip()}
+
+
+def css_grammar(spec: dict) -> str:
+    vocab = list(dict.fromkeys(ROOMS[spec["room_type"]]))
+    return "\n".join([
+        f"root ::= line{{1,{spec['max_objects']}}}",
+        'line ::= cls " {length: " num "m; width: " num "m; height: " num "m; orientation: " deg '
+        '" degrees; left: " num "m; top: " num "m; depth: " num "m;}\\n"',
+        "cls ::= " + " | ".join(f'"{c}"' for c in vocab),
+        'deg ::= "-"? [0-9] [0-9]? [0-9]?',
+        'num ::= [0-9] [0-9]? "." [0-9] [0-9]'])
+
+
+def exemplars() -> list[dict]:
+    global _EXEMPLARS
+    if _EXEMPLARS is None:
+        import json
+        from pathlib import Path
+        path = Path(__file__).resolve().parents[1] / EXEMPLARS_PATH
+        _EXEMPLARS = json.loads(path.read_text(encoding="utf-8"))
+    return _EXEMPLARS
+
+
+def floor_mask(pts: list, n: int = 64, extent: float = 8.0) -> list[list[bool]]:
+    """The floor as an n x n mask over an extent x extent metre square from the outline's min corner."""
+    x0, y0 = min(p[0] for p in pts), min(p[1] for p in pts)
+    shifted = [[x - x0, y - y0] for x, y in pts]
+    step = extent / n
+    return [[_inside((i + 0.5) * step, (j + 0.5) * step, shifted) for i in range(n)] for j in range(n)]
+
+
+def similar_rooms(spec: dict, k: int = LAYOUTGPT_K) -> list[dict]:
+    """LayoutGPT's k-similar selection: same room type, least mean squared mask difference first."""
+    q = floor_mask(spec["floor_plan"])
+    pool = [e for e in exemplars() if e["room_type"] == spec["room_type"]]
+
+    def mse(e: dict) -> float:
+        m = floor_mask(e["floor_plan"])
+        return sum(a != b for ra, rb in zip(q, m) for a, b in zip(ra, rb)) / (len(q) * len(q[0]))
+    return sorted(pool, key=lambda e: (mse(e), e["id"]))[:k]
+
+
+def _condition(spec: dict) -> str:
+    xs, ys = [p[0] for p in spec["floor_plan"]], [p[1] for p in spec["floor_plan"]]
+    return (f"Condition:\nRoom Type: {ROOM_NAME.get(spec['room_type'], spec['room_type'])}\n"
+            f"Room Size: max length {max(xs) - min(xs):.2f}m, max width {max(ys) - min(ys):.2f}m\nLayout:\n")
+
+
+def layoutgpt_messages(spec: dict, k: int = LAYOUTGPT_K) -> list[dict]:
+    shots = similar_rooms(spec, k)
+    vocab = list(dict.fromkeys(ROOMS[spec["room_type"]]))
+    freq: dict[str, int] = {}
+    for e in exemplars():
+        if e["room_type"] == spec["room_type"]:
+            for line in e["layout"]:
+                c = line.split(" ", 1)[0]
+                freq[c] = freq.get(c, 0) + 1
+    total = sum(freq.values()) or 1
+    system = ("You are a 3D indoor scene designer. \nInstruction: synthesize the 3D layout of an indoor scene. "
+              "The generated 3D layout should follow the CSS style, where each line starts with the furniture "
+              "category and is followed by the 3D size, orientation and absolute position. Formally, each line "
+              "should follow the template: \nFURNITURE {length: ?m; width: ?m; height: ?m; orientation: ? degrees; "
+              "left: ?m; top: ?m; depth: ?m;}\nAll values are in meters but the orientation angle is in degrees.\n"
+              f"Available furnitures: {', '.join(vocab)}\n"
+              "Overall furniture frequencies: (" + "; ".join(f"{c}: {freq[c] / total:.2f}" for c in vocab if c in freq)
+              + ")")
+    msgs = [{"role": "system", "content": system}]
+    for e in shots:
+        msgs += [{"role": "user", "content": _condition(e)}, {"role": "assistant", "content": "\n".join(e["layout"]) + "\n"}]
+    return msgs + [{"role": "user", "content": _condition(spec)}]

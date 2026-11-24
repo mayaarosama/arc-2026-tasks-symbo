@@ -17,7 +17,8 @@
 #   --machine workstation|dgx   required; selects config/worker-<machine>.yaml
 #   --show-only                 only the show models (config/demo.yaml), not the full matrix
 #   --no-start                  set up and check, but do not start the workers
-#   --conductor                 also start the conductor here (config/demo.yaml, port 8000)
+#   --conductor                 also set up and start the conductor here (config/demo.yaml, port 8000),
+#                               with the cut-out model for uploaded pictures (176 MB, runs on the CPU)
 #   --no-pull                   skip git pull
 #   --reserve-gb N              disk to keep free after downloads (default 10)
 # Env: PY (default python3.11, else python3.10), SECRETS (default ../config.txt next to demo/).
@@ -325,6 +326,7 @@ venv_music() {
 }
 venv_llm()       { mkvenv .venv-llm && .venv-llm/bin/pip install -r requirements/llm.txt; }
 venv_conductor() { mkvenv .venv && .venv/bin/pip install -r requirements/conductor.txt; }
+cutout_model()   { .venv/bin/python scripts/download_weights.py --cutout && .venv/bin/python scripts/verify_offline.py --cutout; }
 
 gpu_check() {   # task: torch must run a kernel on the GPU; one automatic reinstall from cu128 if it cannot
     local py; py="$(vpy "${VENV[$1]}")"
@@ -531,6 +533,7 @@ main() {
     run_step "venv music" music venv_music || broken music "venv music failed"
     run_step "venv llm" llm venv_llm     || broken llm "venv llm failed"
     if [ $CONDUCTOR = 1 ]; then run_step "venv conductor" "" venv_conductor || CONDUCTOR=0; fi
+    if [ $CONDUCTOR = 1 ]; then run_step "cut-out model (uploads)" "" cutout_model || true; fi   # uploads need it, the show does not
 
     local t
     for t in t2i i23d music; do

@@ -95,6 +95,7 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink);
 .layout-console .con-line.new { color: #fff; animation: land .35s ease-out; }
 .layout-console .con-line.bad { color: #ffb3b3; }
 .layout-console .con-line .why { color: var(--bad); font-family: "Segoe UI", system-ui, sans-serif; font-size: .9em; }
+.layout-console .con-line .fix { color: #7fd38a; font-family: "Segoe UI", system-ui, sans-serif; font-size: .9em; }
 .layout-console .con-line.caret { color: var(--live); animation: blink 1s steps(2) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 .round-head .input.layout-ask { align-items: center; gap: 1.2vw; }

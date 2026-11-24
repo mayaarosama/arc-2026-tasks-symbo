@@ -110,8 +110,12 @@ function expectedOutput(task, st, budget) {
   return "";
 }
 
+// A protocol may carry a variant ("iso_quality+fix": its own settings in demo.yaml); the stage
+// only cares about the base protocol.
+const baseProtocol = (p) => String(p || "").split("+")[0];
+
 function protocolText(protocol, budget) {
-  if (protocol === "iso_quality" || !budget)
+  if (baseProtocol(protocol) === "iso_quality" || !budget)
     return "Same work on every machine, no time limit — we compare how long each one takes.";
   return `Same time limit for every machine (${budget} s) — each does as much as it can.`;
 }
@@ -157,6 +161,7 @@ function planSvg(item) {
 
 // Task 8: one placed object back as the line the model wrote (stage console).
 function layoutLine(o) {
+  if (o.css) return o.css;              // LayoutGPT's prompt: the line exactly as the model wrote it
   const n = (v) => Number(v).toFixed(2);
   if (o.wall) return `${o.cls} wall=${o.wall} at=${n(o.at)}`;
   const dir = { 0: "north", 90: "east", 180: "south", 270: "west" }[o.rot] || `${o.rot}`;

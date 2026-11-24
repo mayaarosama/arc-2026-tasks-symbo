@@ -61,11 +61,12 @@ function buildRound(round) {
   const ibox = document.getElementById("r-input");
   ibox.replaceChildren();
   ibox.classList.remove("layout-ask");
-  if (round.task === "i23d" && inp.input) {
+  if (round.task === "i23d" && (inp.input || inp.input_url)) {
     const img = el("img");
-    img.src = "/media-input/" + inp.input;
+    img.src = inp.input_url || "/media-input/" + inp.input;     // input_url: an operator's own picture
     img.onerror = () => img.remove();
-    ibox.append(img, el("span", null, `${inp.label} · ${inp.tier} · from Google Scanned Objects`));
+    ibox.append(img, el("span", null, inp.tier === "upload" ? `${inp.label} · a picture brought today`
+      : `${inp.label} · ${inp.tier} · from Google Scanned Objects`));
   } else if (round.task === "layout") {   // what the model is asked: the plan with its wall names, in words
     ibox.classList.add("layout-ask");
     const txt = el("div", "ask");
@@ -75,7 +76,7 @@ function buildRound(round) {
   } else {
     ibox.append(el("span", null, inp.prompt ? `“${inp.prompt}”` : inp.label || inp.id));
   }
-  document.getElementById("r-protocol").textContent = PROTOCOL_LABEL[round.protocol] || round.protocol;
+  document.getElementById("r-protocol").textContent = PROTOCOL_LABEL[baseProtocol(round.protocol)] || round.protocol;
   document.getElementById("r-caption").textContent = round.caption || "";
 }
 
@@ -100,7 +101,7 @@ function updateCellStatic(round, mid) {
     res = throughput(round, c) ? `${roomsText(c.completed)} in ${round.budget_seconds} s`
                                : `Finished in ${fmtShort(c.final_seconds)} · ${Layout.tally(objs)}`;
   } else if (finished && round.task === "llm" && c.status !== "out_of_memory" && c.tokens) {
-    res = round.protocol === "iso_quality" ? `Finished in ${fmtShort(c.final_seconds)} · ${tpsText(c.tokens_per_second)}`
+    res = baseProtocol(round.protocol) === "iso_quality" ? `Finished in ${fmtShort(c.final_seconds)} · ${tpsText(c.tokens_per_second)}`
                                            : tokenText(c.tokens, c.tokens_per_second);
   } else if (finished) {
     if (c.status === "out_of_memory") { res = "Out of memory"; cls += " oom"; }
@@ -232,7 +233,7 @@ function tick() {
 function drawConsole(round, c, b, finished) {
   const objs = Layout.visible(round, c);
   const writing = !finished && c.mode !== "PENDING" && !c.recorded;
-  const key = `${objs.length}|${writing}|${c.mode}|${c.status}|${objs.length ? objs[0].room || 0 : 0}`;
+  const key = `${objs.map((o) => `${o.i}:${layoutLine(o)}:${(o.issues || []).length}`).join(",")}|${writing}|${c.mode}|${c.status}|${objs.length ? objs[0].room || 0 : 0}`;
   if (key === b.consoleKey) return;
   b.consoleKey = key;
   const body = el("div", "con-body");
@@ -240,7 +241,8 @@ function drawConsole(round, c, b, finished) {
     const bad = o.issues && o.issues.length;
     const line = el("div", "con-line" + (bad ? " bad" : "") + (k === objs.length - 1 && writing ? " new" : ""));
     line.append(el("span", "n", String(o.i + 1)), el("span", "t", layoutLine(o)));
-    if (bad) line.appendChild(el("span", "why", " ← " + o.issues.join(", ")));
+    if (bad) line.appendChild(el("span", "why", " ← " + o.issues.join(", ") + (o.fixing ? " · fixing" : "")));
+    else if (o.fixing) line.appendChild(el("span", "fix", " ↻ fixed by the model"));
     body.appendChild(line);
   });
   if (writing) body.appendChild(el("div", "con-line caret", c.status === "loading" ? "loading the model…" : "▍"));
@@ -302,7 +304,7 @@ function headline(round) {
       v = `recorded run took ${fmtShort(c.recorded.seconds)}`;
     } else if (fin && (c.status === "unavailable" || c.status === "error")) {
       v = noResult(c).toLowerCase();
-    } else if (round.protocol === "iso_quality") {
+    } else if (baseProtocol(round.protocol) === "iso_quality") {
       v = fin && c.status === "ok" ? fmtShort(c.final_seconds)
         : c.status === "out_of_memory" && fin ? "out of memory" : "still running";
     } else if (round.task === "layout") {
@@ -338,7 +340,7 @@ function renderSummary(history) {
   for (const h of [...latest.values()].slice(-6)) {
     const row = el("div", "srow");
     row.appendChild(el("div", "label",
-      `${h.title} · ${h.input_label} · ${PROTOCOL_LABEL[h.protocol]}${h.budget_seconds ? " " + h.budget_seconds + " s" : ""}`));
+      `${h.title} · ${h.input_label} · ${PROTOCOL_LABEL[baseProtocol(h.protocol)]}${h.budget_seconds ? " " + h.budget_seconds + " s" : ""}`));
     for (const m of cfg.machines) {
       const c = h.cells[m.id];
       if (!c) continue;
@@ -367,7 +369,8 @@ function summaryLabel(c, task) {
   if (c.status === "out_of_memory") return `out of memory · ${badge}`;
   if (c.status === "unavailable" || c.status === "error") return noResult(c).toLowerCase();
   const count = task === "layout" && c.layout
-    ? (c.requested === 0 ? `${roomsText(c.completed)} · ` : `${c.layout.objects} objects, ${c.layout.flagged} flagged · `)
+    ? (c.requested === 0 ? `${roomsText(c.completed)} · ` : `${c.layout.objects} objects, ${c.layout.flagged} flagged`
+      + (c.layout.fixes != null ? ` (first pass ${c.layout.first_flagged}, ${c.layout.fixes} fixed)` : "") + " · ")
     : c.tokens ? tokenText(c.tokens, c.tokens_per_second) + " · "
     : c.requested > 1 ? `${c.completed}/${c.requested} · ` : "";
   const sc = c.score && c.score.chamfer_x100 != null ? ` · error ${c.score.chamfer_x100.toFixed(2)}` : "";

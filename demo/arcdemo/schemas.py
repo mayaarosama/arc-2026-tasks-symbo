@@ -41,6 +41,7 @@ class JobRequest(BaseModel):
     batch: int = 1
     # i23d
     image_path: Optional[str] = None            # path relative to the worker's demo root
+    image_b64: Optional[str] = None             # or the image itself (operator upload, PNG): saved off the clock
     resolution: Optional[int] = None
     texture_size: Optional[int] = None
     decimation: Optional[int] = None
@@ -60,6 +61,9 @@ class JobRequest(BaseModel):
     floor_plan: Optional[list[list[float]]] = None   # outline, metres, [[x, y], ...]
     door: Optional[list[float]] = None          # [x, y] on the outline
     max_objects: Optional[int] = None
+    repairs: int = 0                            # self-correction: tries to rewrite a flagged line at once
+    review_rounds: int = 0                      # self-correction: move/remove rounds on the finished room
+    layout_prompt: Optional[str] = None         # None / "v3.1": our prompt; "layoutgpt": LayoutGPT's (layout_prompt.py)
 
 
 class Progress(BaseModel):
@@ -114,3 +118,6 @@ class HealthInfo(BaseModel):
     loading: Optional[str] = None
     env_hash: str
     available: Optional[list[str]] = None   # this worker's models whose weights are on disk
+    rss_mb: Optional[int] = None            # this worker's resident memory, incl. llama-server
+    ram_free_mb: Optional[int] = None       # the machine's available RAM
+    vram_free_mb: Optional[int] = None      # free memory on this worker's GPU (when it uses one)

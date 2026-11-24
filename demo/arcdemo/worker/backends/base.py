@@ -4,6 +4,7 @@ from __future__ import annotations
 import gc
 import importlib
 import logging
+import sys
 import threading
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -109,13 +110,23 @@ class Backend:
 
 
 def free_memory() -> None:
+    """Return freed memory to the OS, not just to Python. On Linux, glibc keeps freed heap pages
+    (large tensors included, below its moving mmap threshold) until malloc_trim, so the worker's
+    RSS would not drop after an unload. Windows returns large frees at once: nothing to do."""
     gc.collect()
     try:
-        import torch
-        if torch.cuda.is_available():
+        torch = sys.modules.get("torch")     # never import torch just to free memory (llm env has none)
+        if torch is not None and torch.cuda.is_available() and torch.cuda.is_initialized():
             torch.cuda.empty_cache()
-    except ImportError:
+            torch.cuda.ipc_collect()
+    except Exception:  # noqa: BLE001
         pass
+    if sys.platform.startswith("linux"):
+        try:
+            import ctypes
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except (OSError, AttributeError):
+            pass
 
 
 def is_oom(exc: BaseException) -> bool:
