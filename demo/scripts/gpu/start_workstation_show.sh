@@ -13,7 +13,7 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 1            # demo/
 DEMO="$PWD"
-SECRETS="${SECRETS:-$DEMO/../config.txt}"
+SECRETS="${SECRETS:-$DEMO/./config.txt}"
 CPU=1 STOP=0
 for a in "$@"; do
     case "$a" in
