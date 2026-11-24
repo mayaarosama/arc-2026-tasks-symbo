@@ -113,3 +113,4 @@ class HealthInfo(BaseModel):
     loaded: list[str]
     loading: Optional[str] = None
     env_hash: str
+    available: Optional[list[str]] = None   # this worker's models whose weights are on disk

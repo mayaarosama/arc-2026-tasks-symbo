@@ -42,6 +42,7 @@ const Demo = {
 
   cellFinished(round, cell) {
     if (cell.recorded) return true;
+    if (cell.status === "unavailable" || cell.status === "error") return true;   // ended, no result
     if (cell.final_seconds == null) return false;
     return cell.mode !== "REPLAY" || this.elapsed(round) >= cell.final_seconds;
   },

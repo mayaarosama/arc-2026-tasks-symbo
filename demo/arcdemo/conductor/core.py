@@ -90,7 +90,7 @@ def _layout_summary(objects: Optional[list]) -> Optional[dict]:
 
 
 class Conductor:
-    def __init__(self, cfg: DemoConfig, allow_replay: bool = True) -> None:
+    def __init__(self, cfg: DemoConfig, allow_replay: bool = True, picks_path: Optional[Path] = None) -> None:
         self.cfg = cfg
         self.allow_replay = allow_replay
         self.replay = ReplayStore(cfg.replay_dir)
@@ -106,12 +106,71 @@ class Conductor:
         self._tasks: dict[str, asyncio.Task] = {}
         self._round_done = asyncio.Event()
         self.log_path = cfg.session_dir / "runs.jsonl"
+        # The operator's model picks, {task: {machine: model}}; none = the planned model.
+        # Kept in picks_path (the web app passes one) so a conductor restart keeps them.
+        self.picks_path = picks_path
+        self.model_picks: dict[str, dict[str, str]] = self._load_picks()
+
+    # ================================================================== model picks =======
+    def settings(self, task: str, protocol: str, mid: str) -> dict[str, Any]:
+        """The settings a cell runs with: the planned ones, with the operator's model pick."""
+        return self.cfg.settings(task, protocol, mid, self.model_picks.get(task, {}).get(mid))
+
+    def _load_picks(self) -> dict[str, dict[str, str]]:
+        if not self.picks_path or not self.picks_path.exists():
+            return {}
+        try:
+            raw = json.loads(self.picks_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            log.warning("ignoring unreadable %s", self.picks_path)
+            return {}
+        mids = {m["id"] for m in self.cfg.machines}
+        picks = {}
+        for task, by_mid in (raw or {}).items():   # drop picks the config no longer offers
+            ok = {mid: k for mid, k in (by_mid or {}).items()
+                  if mid in mids and k in self.cfg.model_options(task)}
+            if ok:
+                picks[task] = ok
+        return picks
+
+    def on_disk(self, mid: str, task: str, model: str) -> Optional[bool]:
+        """Whether `mid`'s worker for `task` has `model`'s weights. None = unknown (worker down,
+        or an older worker that does not report it): then nothing is blocked."""
+        h = self.health.get(f"{mid}:{task}") or {}
+        if not h.get("ok") or h.get("available") is None:
+            return None
+        return model in h["available"]
+
+    def set_model(self, task: str, mid: str, model: Optional[str]) -> dict:
+        """Pick the model `mid` runs for `task` (None = back to the planned one)."""
+        self.cfg.machine(mid)
+        options = self.cfg.model_options(task)
+        if not options:
+            raise KeyError(f"no task '{task}'")
+        if model and model not in options:
+            raise ValueError(f"{model} is not offered for {task} (add it to model_choices in the config)")
+        if model and self.on_disk(mid, task, model) is False:
+            raise ValueError(f"{self.cfg.model_label(model)} is not downloaded on {self.cfg.machine(mid)['label']}")
+        if self.round and not self.round["done"] and self.round["task"] == task:
+            raise RuntimeError("a round of this task is running — wait or stop it first")
+        by_mid = self.model_picks.setdefault(task, {})
+        if model:
+            by_mid[mid] = model
+        else:
+            by_mid.pop(mid, None)
+        if not by_mid:
+            self.model_picks.pop(task, None)
+        self.prepare_state.pop(mid, None)          # what was loaded no longer matches the plan
+        log.info("model pick: %s %s -> %s", mid, task, model or "planned")
+        if self.picks_path:
+            self.picks_path.write_text(json.dumps(self.model_picks, indent=1), encoding="utf-8")
+        return self.model_picks
 
     # ================================================================== public state ======
     def state(self) -> dict:
         return {"server_now": time.time(), "view": self.view, "round": self.round,
                 "history": self.history, "health": self.health, "prepare": self.prepare_state,
-                "warnings": self.env_warnings()}
+                "model_picks": self.model_picks, "warnings": self.env_warnings()}
 
     def env_warnings(self) -> list[str]:
         out = []
@@ -167,9 +226,14 @@ class Conductor:
         task, protocol = seg["task"], seg["protocol"]
         for m in self.cfg.machines:
             mid = m["id"]
-            s = self.cfg.settings(task, protocol, mid)
+            s = self.settings(task, protocol, mid)
             if s.get("mode") == "replay" or s.get("prepare") is False:
                 self.prepare_state[mid] = {"status": "skipped", "model": s["model"]}
+                continue
+            if self.on_disk(mid, task, s["model"]) is False:
+                self.prepare_state[mid] = {"status": "missing", "model": s["model"],
+                                           "message": f"{self.cfg.model_label(s['model'])} is not downloaded on this machine"}
+                log.warning("prepare %s: %s does not have %s on disk", segment_id, mid, s["model"])
                 continue
             url = self.cfg.worker_url(mid, task)
             try:
@@ -252,14 +316,14 @@ class Conductor:
         return self.round
 
     def _new_cell(self, m: dict, task: str, protocol: str) -> dict:
-        s = self.cfg.settings(task, protocol, m["id"])
+        s = self.settings(task, protocol, m["id"])
         return {"machine": m["id"], "label": m["label"], "hardware": m.get("hardware", ""),
                 "color": m.get("color", "#888"), "mode": "PENDING", "status": "queued",
                 "model": s["model"], "model_label": self.cfg.model_label(s["model"]),
                 "settings": {k: v for k, v in s.items() if k not in ("model", "mode", "prepare")},
                 "outputs": [], "completed": 0, "requested": None, "final_seconds": None,
                 "progress": None, "note": "", "reference": None, "score": None, "mock": False,
-                "run_id": None, "result": None, "recorded": None,
+                "run_id": None, "result": None, "recorded": None, "missing_model": False,
                 "full_recording": bool(m.get("show_full_recording")), **_llm_fields({})}
 
     async def _finish_round(self, rnd: dict) -> None:
@@ -327,11 +391,13 @@ class Conductor:
         out = {"segment_id": segment_id, "task": task, "protocol": protocol,
                "budget_seconds": seg.get("budget_seconds"), "machines": []}
         for m in self.cfg.machines:
-            s = self.cfg.settings(task, protocol, m["id"])
+            s = self.settings(task, protocol, m["id"])
             row = {"id": m["id"], "label": m["label"], "model": s["model"],
+                   "planned_model": self.cfg.settings(task, protocol, m["id"])["model"],
                    "model_label": self.cfg.model_label(s["model"]), "mode": s.get("mode", "live"),
                    "settings": {k: v for k, v in s.items() if k not in ("model", "mode", "prepare")},
-                   "full_recording": bool(m.get("show_full_recording")), "recording": None}
+                   "full_recording": bool(m.get("show_full_recording")), "recording": None,
+                   "on_disk": {k: self.on_disk(m["id"], task, k) for k in self.cfg.model_options(task)}}
             if input_id and input_id != "live":
                 rec = (self.replay.get_full(task, protocol, m["id"], input_id, s) if row["full_recording"]
                        else self.replay.get(task, protocol, m["id"], input_id, s))
@@ -348,7 +414,7 @@ class Conductor:
         rnd = self.round
         task, protocol, item = rnd["task"], rnd["protocol"], rnd["input"]
         cell = rnd["cells"][mid]
-        s = self.cfg.settings(task, protocol, mid)
+        s = self.settings(task, protocol, mid)
         rec = (self.replay.get_full(task, protocol, mid, item["id"], s) if cell["full_recording"]
                else self.replay.get(task, protocol, mid, item["id"], s))
         if rec:
@@ -358,6 +424,11 @@ class Conductor:
             await self._play_replay(rnd, mid, "scheduled replay (rehearsal result)")
             return
 
+        if self.on_disk(mid, task, s["model"]) is False:   # never send a job that can only fail
+            await self._fallback(rnd, mid, f"{self.cfg.model_label(s['model'])} is not downloaded on this machine")
+            if cell["status"] in ("unavailable", "error"):
+                cell["missing_model"] = True
+            return
         url = self.cfg.worker_url(mid, task)
         job = self._job_request(task, protocol, item, s, rnd["budget_seconds"])
         cell["run_id"] = job["run_id"]
@@ -513,7 +584,7 @@ class Conductor:
         if cell["full_recording"] and self._has_full_recording(rnd, mid):
             self._show_full_recording(rnd, mid, reason, None)
             return
-        s = self.cfg.settings(rnd["task"], rnd["protocol"], mid)
+        s = self.settings(rnd["task"], rnd["protocol"], mid)
         rec = self.replay.get(rnd["task"], rnd["protocol"], mid, rnd["input"]["id"], s)
         cell["mode"] = "REPLAY"
         cell["outputs"] = []
@@ -549,7 +620,7 @@ class Conductor:
     def _has_full_recording(self, rnd: dict, mid: str) -> bool:
         if rnd["input"]["id"] == "live":
             return False
-        s = self.cfg.settings(rnd["task"], rnd["protocol"], mid)
+        s = self.settings(rnd["task"], rnd["protocol"], mid)
         return self.replay.get_full(rnd["task"], rnd["protocol"], mid, rnd["input"]["id"], s) is not None
 
     def _show_full_recording(self, rnd: dict, mid: str, why: str, live_seconds: Optional[float]) -> None:
@@ -557,7 +628,7 @@ class Conductor:
         labelled with the time that run took to finish. Synchronous on purpose: it must land
         before _finish_round summarises the round."""
         cell = rnd["cells"][mid]
-        s = self.cfg.settings(rnd["task"], rnd["protocol"], mid)
+        s = self.settings(rnd["task"], rnd["protocol"], mid)
         rec = self.replay.get_full(rnd["task"], rnd["protocol"], mid, rnd["input"]["id"], s)
         if rec is None:
             return
@@ -595,7 +666,7 @@ class Conductor:
     # ------------------------------------------------------------------ records ----------
     def _log(self, rnd: dict, mid: str, res: dict, badge: str) -> None:
         cell = rnd["cells"][mid]
-        s = self.cfg.settings(rnd["task"], rnd["protocol"], mid)
+        s = self.settings(rnd["task"], rnd["protocol"], mid)
         rec = {"ts": time.time(), "round": rnd["id"], "segment": rnd["segment_id"], "warmup": rnd["warmup"],
                "machine": mid, "task": rnd["task"], "protocol": rnd["protocol"],
                "input_id": rnd["input"]["id"], "model": s["model"], "model_repo": res.get("model_repo"),

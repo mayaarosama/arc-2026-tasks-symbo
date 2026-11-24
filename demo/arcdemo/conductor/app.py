@@ -44,13 +44,19 @@ class SegmentBody(BaseModel):
     segment_id: str
 
 
+class ModelPickBody(BaseModel):
+    task: str
+    machine: str
+    model: Optional[str] = None     # None = back to the model planned in the config
+
+
 def create_app(cfg: DemoConfig) -> FastAPI:
     cond: Optional[Conductor] = None
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         nonlocal cond
-        cond = Conductor(cfg)
+        cond = Conductor(cfg, picks_path=cfg.session_dir / "model_picks.json")
         task = asyncio.create_task(cond.health_loop())
         yield
         task.cancel()
@@ -137,12 +143,24 @@ def create_app(cfg: DemoConfig) -> FastAPI:
             raise HTTPException(404, str(e))
         if seg["task"] == "layout":
             mids = [m["id"] for m in cfg.machines]
-            s = cfg.settings("layout", seg["protocol"], mids[0]) if mids else {}
+            s = cond.settings("layout", seg["protocol"], mids[0]) if mids else {}
             return {"task": "layout", "text": layout_prompt_text(item, s.get("max_objects"))}
         if seg["task"] == "llm":
             from ..worker.backends.llm import SYSTEM
             return {"task": "llm", "text": f"=== system ===\n{SYSTEM}\n\n=== user ===\n{item.get('prompt', '')}"}
         return {"task": seg["task"], "text": None}
+
+    @app.post("/api/model")
+    def pick_model(body: ModelPickBody) -> dict:
+        """Operator's model choice for one machine and task; Prepare must be pressed again."""
+        try:
+            return {"model_picks": cond.set_model(body.task, body.machine, body.model)}
+        except KeyError as e:
+            raise HTTPException(404, str(e))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        except RuntimeError as e:
+            raise HTTPException(409, str(e))
 
     @app.post("/api/prepare")
     async def prepare(body: SegmentBody) -> dict:

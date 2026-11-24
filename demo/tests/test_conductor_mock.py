@@ -1,6 +1,7 @@
 """End to end: conductor + three mock worker processes. Covers the failure drill:
 a dead worker must never hang a round — the cell falls back and says why."""
 import asyncio
+import json
 import socket
 import subprocess
 import sys
@@ -86,6 +87,31 @@ def test_dead_worker_falls_back_with_a_reason(stack):
     assert cpu["mode"] == "REPLAY" and cpu["status"] == "unavailable"   # no rehearsal record in tmp
     assert "unreachable" in cpu["note"]
     assert rnd["cells"]["dgx"]["status"] == "ok"           # the others are unaffected
+
+
+def test_operator_model_pick_runs_on_that_machine_only(stack, tmp_path):
+    cfg, _ = stack
+    picks = tmp_path / "picks.json"
+
+    async def go():
+        cond = Conductor(cfg, picks_path=picks)
+        cond.set_model("t2i", "workstation", "sd35-medium-not5")
+        await cond.refresh_health()
+        rnd = await cond.start_round("seg2", "t2i-01")
+        with pytest.raises(RuntimeError):                  # no switching mid-round
+            cond.set_model("t2i", "workstation", None)
+        await cond.wait_round(60)
+        await cond.http.aclose()
+        return rnd
+
+    rnd = asyncio.run(go())
+    ws, dgx = rnd["cells"]["workstation"], rnd["cells"]["dgx"]
+    assert ws["status"] == "ok", ws["note"]
+    assert ws["model"] == "sd35-medium-not5" and ws["settings"]["width"] == 1024
+    assert dgx["model"] == "sd15" and dgx["settings"]["width"] == 512
+    log = [json.loads(x) for x in (Path(cfg.session_dir) / "runs.jsonl").read_text().splitlines()]
+    assert {r["machine"]: r["model"] for r in log}["workstation"] == "sd35-medium-not5"
+    assert Conductor(cfg, picks_path=picks).model_picks == {"t2i": {"workstation": "sd35-medium-not5"}}
 
 
 # ---------------------------------------------------------------- stop + full recordings ----
@@ -251,3 +277,52 @@ def test_layout_replay_keeps_object_times(stack, tmp_path):
 
     ws = asyncio.run(go())["cells"]["workstation"]
     assert ws["mode"] == "REPLAY" and ws["objects"] == objs and ws["final_seconds"] == 9.0
+
+
+def test_model_not_on_disk_is_refused_and_never_sent(stack):
+    """A worker that reports the model missing: no pick, no load, no job — a plain message."""
+    cfg, _ = stack
+
+    async def go():
+        cond = Conductor(cfg)
+        await cond.refresh_health()
+        h = cond.health["workstation:t2i"]
+        assert "sd35-medium-not5" in h["available"]          # mock workers have every model
+        h["available"] = [k for k in h["available"] if k != "sd35-medium-not5"]
+        with pytest.raises(ValueError, match="not downloaded"):
+            cond.set_model("t2i", "workstation", "sd35-medium-not5")
+        cond.model_picks = {"t2i": {"workstation": "sd35-medium-not5"}}   # e.g. from an older picks file
+        prep = await cond.prepare("seg2")
+        rnd = await cond.start_round("seg2", "t2i-01")
+        await cond.wait_round(60)
+        await cond.http.aclose()
+        return prep, rnd
+
+    prep, rnd = asyncio.run(go())
+    assert prep["workstation"]["status"] == "missing"
+    ws = rnd["cells"]["workstation"]
+    assert ws["status"] == "unavailable" and ws["missing_model"] and ws["run_id"] is None
+    assert "not downloaded" in ws["note"]
+    assert rnd["cells"]["dgx"]["status"] == "ok"
+
+
+def test_on_disk_reads_the_hub_cache(tmp_path, monkeypatch):
+    from arcdemo.weights import on_disk
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
+    gguf = {"repo": "org/m-GGUF", "file": "*Q4_K_M.gguf"}
+    assert not on_disk(gguf)
+    snap = tmp_path / "models--org--m-GGUF" / "snapshots" / "abc"
+    snap.mkdir(parents=True)
+    (snap / "m-Q8_0.gguf").write_text("x")
+    assert not on_disk(gguf)                                   # another quantisation only
+    (snap / "m-Q4_K_M.gguf").write_text("x")
+    assert on_disk(gguf)
+    gated = tmp_path / "models--stabilityai--stable-diffusion-3.5-medium" / "snapshots" / "b9"
+    gated.mkdir(parents=True)
+    (gated / "LICENSE.md").write_text("x")                     # a refused gated download
+    assert not on_disk({"repo": "stabilityai/stable-diffusion-3.5-medium"})
+    sf3d = {"repo": "stabilityai/stable-fast-3d"}
+    (tmp_path / "models--stabilityai--stable-fast-3d" / "snapshots" / "a").mkdir(parents=True)
+    (tmp_path / "models--stabilityai--stable-fast-3d" / "snapshots" / "a" / "model.safetensors").write_text("x")
+    assert not on_disk(sf3d, "sf3d")                           # its encoders are missing
+    assert on_disk({"repo": "music-stub"})

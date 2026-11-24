@@ -286,7 +286,18 @@ def create_app(cfg: dict) -> FastAPI:
         busy = runner.active is not None and runner.active.result.status not in TERMINAL
         return HealthInfo(machine=cfg["machine"], tasks=cfg["tasks"], mock=bool(cfg.get("mock")),
                           busy=busy, loaded=list(models.loaded), loading=models.loading,
-                          env_hash=env_cache["env_hash"])
+                          env_hash=env_cache["env_hash"], available=available())
+
+    disk = {"at": 0.0, "keys": []}
+
+    def available() -> list[str]:
+        """Models of this worker's tasks whose weights are on disk (re-checked every 15 s)."""
+        if time.time() - disk["at"] > 15:
+            from ..weights import on_disk
+            disk["keys"] = [k for k, spec in cfg["models"].items() if spec.get("task") in cfg["tasks"]
+                            and (cfg.get("mock") or on_disk(spec, k))]
+            disk["at"] = time.time()
+        return disk["keys"]
 
     @app.get("/env")
     def env() -> dict:

@@ -39,6 +39,11 @@ class DemoConfig:
         self.inputs: dict[str, list[dict]] = {}
         for task, rel in (self.raw.get("inputs") or {}).items():
             self.inputs[task] = json.loads((ROOT / rel).read_text(encoding="utf-8"))
+        # model_choices: {task: {model_key: {settings that model needs}}} — the models the operator
+        # may pick instead of the planned one (operator page, "AI model"). Not downloaded by default.
+        self.choices: dict[str, dict[str, dict]] = {
+            task: {k: dict(v or {}) for k, v in (models or {}).items()}
+            for task, models in (self.raw.get("model_choices") or {}).items()}
         self._validate()
 
     def _validate(self) -> None:
@@ -63,6 +68,16 @@ class DemoConfig:
                 bad = set(s) - job_fields - {"mode", "prepare"}
                 if bad:
                     errors.append(f"{where}: unknown keys {sorted(bad)}")
+        for task, models in self.choices.items():
+            for key, extra in models.items():
+                where = f"model_choices {task}/{key}"
+                if key not in self.models:
+                    errors.append(f"{where}: not in models.yaml")
+                elif self.models[key].get("task") != task:
+                    errors.append(f"{where}: models.yaml says it is a {self.models[key].get('task')} model")
+                bad = set(extra) - job_fields - {"mode", "prepare"} | ({"model"} & set(extra))
+                if bad:
+                    errors.append(f"{where}: unknown keys {sorted(bad)}")
         if errors:   # dict.fromkeys: segments sharing a task/protocol would repeat the same error
             raise ValueError(f"{self.path.name} is invalid:\n  " + "\n  ".join(dict.fromkeys(errors)))
 
@@ -84,14 +99,25 @@ class DemoConfig:
                 return dict(item)
         raise KeyError(f"no {task} input '{input_id}'")
 
-    def settings(self, task: str, protocol: str, mid: str) -> dict[str, Any]:
+    def settings(self, task: str, protocol: str, mid: str, model: Optional[str] = None) -> dict[str, Any]:
+        """The planned settings for one cell. `model` (the operator's pick) replaces the planned
+        model and applies that model's own settings from model_choices (resolution, steps...);
+        the protocol's keys (streams, temperature, budget behaviour) stay as planned."""
         block = (self.raw.get("settings") or {}).get(task, {}).get(protocol)
         if block is None:
             raise KeyError(f"no settings for {task}/{protocol}")
         merged = {**block.get("all", {}), **block.get(mid, {})}
         if "model" not in merged:
             raise KeyError(f"settings {task}/{protocol}/{mid} name no model")
+        if model and model != merged["model"]:
+            merged = {**merged, **self.choices.get(task, {}).get(model, {}), "model": model}
         return merged
+
+    def model_options(self, task: str) -> list[str]:
+        """Every model the operator may pick for a task: the planned ones, then model_choices."""
+        planned = [s.get("model") for block in ((self.raw.get("settings") or {}).get(task) or {}).values()
+                   for s in block.values() if isinstance(s, dict) and s.get("model")]
+        return list(dict.fromkeys(planned + list(self.choices.get(task, {}))))
 
     def model_label(self, key: str) -> str:
         return self.models.get(key, {}).get("label", key)
@@ -101,5 +127,7 @@ class DemoConfig:
 
     def public(self) -> dict:
         """What the operator page needs to draw its controls."""
+        tasks = list(dict.fromkeys(s["task"] for s in self.segments))
         return {"machines": self.machines, "segments": self.segments, "inputs": self.inputs,
-                "model_labels": {k: m.get("label", k) for k, m in self.models.items()}}
+                "model_labels": {k: m.get("label", k) for k, m in self.models.items()},
+                "model_options": {t: self.model_options(t) for t in tasks}}

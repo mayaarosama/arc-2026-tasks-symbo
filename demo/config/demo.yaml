@@ -100,6 +100,39 @@ settings:
       cpu:         {model: qwen35-4b-layout, streams: 1}
 
 # ------------------------------------------------------------------------------------------
+# Model choices. The operator page ("What will run" > AI model) has one dropdown per machine:
+# the model planned above, or any model listed here for that task. A pick holds for every part
+# of that task until changed back, and survives a conductor restart (session_dir/model_picks.json).
+# Each entry holds only what that model needs (resolution, guidance...); the protocol's keys
+# (batch, streams, temperature, steps per machine) stay as planned above.
+# These weights are NOT downloaded for demo.yaml: a model offered here only loads on a machine
+# whose setup also ran demo-full.yaml (setup_gpu_machine.sh does both). Otherwise "Load the AI
+# model" reports the error. No recording exists for a picked model, so there is no REPLAY fallback.
+# ------------------------------------------------------------------------------------------
+model_choices:
+  t2i:
+    sd15:               {width: 512,  height: 512,  guidance: 7.5}
+    sd35-medium-not5:   {width: 1024, height: 1024, guidance: 4.5}
+    sd35-medium-t5int8: {width: 1024, height: 1024, guidance: 4.5}
+    sd35-large:         {width: 1024, height: 1024, guidance: 4.5}   # DGX only
+  i23d:
+    sf3d:                {texture_size: 1024}
+    trellis-image-large: {ss_steps: 12, slat_steps: 12, texture_size: 1024}
+    trellis2-4b:         {resolution: 1024, texture_size: 2048, decimation: 300000}   # ~24 GB: DGX
+  music:
+    sa3-small-music: {}
+    sa3-medium: {}             # needs flash-attn 2 (DGX, workstation)
+  llm:
+    qwen35-4b: {}
+    qwen35-9b: {}
+    qwen35-122b-a10b: {}       # DGX only
+  layout:
+    qwen35-4b-layout: {}
+    qwen35-9b-layout: {}
+    qwen38-27b-layout: {}      # 13.4 GB: the workstation alone, nothing else on the GPU
+    qwen35-122b-a10b-layout: {}   # DGX only
+
+# ------------------------------------------------------------------------------------------
 # Run of show. The operator page shows these as buttons, in order.
 # ------------------------------------------------------------------------------------------
 segments:

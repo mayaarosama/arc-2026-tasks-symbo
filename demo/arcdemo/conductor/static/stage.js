@@ -108,7 +108,7 @@ function updateCellStatic(round, mid) {
                                                             : `Finished in ${fmtShort(c.final_seconds)}`;
     else if (c.status === "budget_exceeded") res = c.completed ? `${c.completed} of ${total} in budget` : "Did not finish in time";
     else if (c.status === "cancelled") res = "Still running";
-    else if (c.status === "unavailable") res = "No result";
+    else if (c.status === "unavailable" || c.status === "error") res = noResult(c);
   } else if (c.status === "cancelled") {
     res = "Still running";
   }
@@ -286,6 +286,12 @@ function stageLine(round, c) {
   return p.stage || "";
 }
 
+// A cell that ended without output: say why in a few words, never a Python error.
+function noResult(c) {
+  if (c.missing_model) return "Model not on this machine";
+  return c.status === "error" ? "Could not run" : "No result";
+}
+
 function headline(round) {
   const parts = [];
   for (const mid of round.order) {
@@ -294,6 +300,8 @@ function headline(round) {
     let v;
     if (c.recorded) {
       v = `recorded run took ${fmtShort(c.recorded.seconds)}`;
+    } else if (fin && (c.status === "unavailable" || c.status === "error")) {
+      v = noResult(c).toLowerCase();
     } else if (round.protocol === "iso_quality") {
       v = fin && c.status === "ok" ? fmtShort(c.final_seconds)
         : c.status === "out_of_memory" && fin ? "out of memory" : "still running";
@@ -338,7 +346,7 @@ function renderSummary(history) {
       line.style.setProperty("--c", m.color);
       line.appendChild(el("div", "who", m.label));
       const track = el("div", "track");
-      const ok = c.final_seconds > 0 && c.status !== "unavailable";
+      const ok = c.final_seconds > 0 && c.status !== "unavailable" && c.status !== "error";
       const w = ok ? scale(c.final_seconds) * 78 : 0;     // leave room for the label
       const fill = el("div", "fill");
       fill.style.width = w + "%";
@@ -357,7 +365,7 @@ function summaryLabel(c, task) {
   const badge = c.mock ? "MOCK" : c.recorded ? "RECORDED" : c.mode;
   if (c.recorded) return `${c.requested > 1 ? `${c.completed}/${c.requested} · ` : ""}finished in ${fmtShort(c.recorded.seconds)} · ${c.model_label} · ${badge}`;
   if (c.status === "out_of_memory") return `out of memory · ${badge}`;
-  if (c.status === "unavailable") return "no result";
+  if (c.status === "unavailable" || c.status === "error") return noResult(c).toLowerCase();
   const count = task === "layout" && c.layout
     ? (c.requested === 0 ? `${roomsText(c.completed)} · ` : `${c.layout.objects} objects, ${c.layout.flagged} flagged · `)
     : c.tokens ? tokenText(c.tokens, c.tokens_per_second) + " · "

@@ -16,16 +16,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from arcdemo.conductor.config import DemoConfig   # noqa: E402
+from arcdemo.weights import DEPENDENCIES          # noqa: E402,F401  (also read by plan_downloads.py)
 
 # Fallback tiers that are not in the settings matrix but must be on disk.
 FALLBACKS = {("cpu", "t2i"): ["sd15"]}
-# Models that fetch further repos at load time (from their own pipeline config).
-DEPENDENCIES = {
-    "trellis2-4b": ["facebook/dinov3-vitl16-pretrain-lvd1689m", "briaai/RMBG-2.0"],
-    # SF3D config: image tokenizer = facebook/dinov2-large; its ClipBasedHeadEstimator calls
-    # open_clip ViT-B-32 "laion2b_s34b_b79k" -> laion/CLIP-ViT-B-32-laion2B-s34B-b79K (found by verify_offline)
-    "sf3d": ["facebook/dinov2-large", "laion/CLIP-ViT-B-32-laion2B-s34B-b79K"],
-}
 # Skip duplicate single-file checkpoints: diffusers loads the per-component folders.
 IGNORE = {
     "stabilityai/stable-diffusion-3.5-large": ["sd3.5_large.safetensors", "text_encoders/*"],

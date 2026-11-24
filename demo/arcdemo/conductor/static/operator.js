@@ -131,9 +131,7 @@ async function loadLayoutView(s, c, box) {
 function renderPlan(s, c, plan) {
   const budget = plan.budget_seconds;
   document.getElementById("p-task").textContent = TASK_NAME[s.task] || s.task;
-  const models = [...new Set(plan.machines.map((m) => m.model_label))];
-  document.getElementById("p-model").textContent =
-    models.length === 1 ? `${models[0]} — the same on every machine` : plan.machines.map((m) => `${m.label}: ${m.model_label}`).join(" · ");
+  renderModelPicker(s, plan);
 
   const inp = document.getElementById("p-input");
   inp.replaceChildren();
@@ -164,6 +162,43 @@ function renderPlan(s, c, plan) {
     li.append(el("b", null, m.label + ": "), document.createTextNode(expectedOutput(s.task, m.settings, budget)));
     li.appendChild(el("div", "rec " + recordingClass(m, c), recordingText(m, c, budget)));
     ul.appendChild(li);
+  }
+}
+
+// One dropdown per machine: the planned model first, then every other model the config offers
+// for this task (model_choices). A pick holds for every part of the same task until changed back.
+function renderModelPicker(s, plan) {
+  const dd = document.getElementById("p-model");
+  dd.replaceChildren();
+  const label = (k) => (cfg.model_labels && cfg.model_labels[k]) || k;
+  const options = (cfg.model_options && cfg.model_options[s.task]) || [];
+  const models = [...new Set(plan.machines.map((m) => m.model))];
+  if (models.length === 1) dd.appendChild(el("div", "muted", "The same on every machine"));
+  else dd.appendChild(el("div", "warn", "Different models on the machines — the comparison is not like for like"));
+  for (const m of plan.machines) {
+    const row = el("div", "model-pick");
+    const sel = el("select");
+    sel.title = `AI model ${m.label} runs for ${TASK_NAME[s.task] || s.task}`;
+    for (const k of [m.planned_model, ...options.filter((k) => k !== m.planned_model)]) {
+      const missing = (m.on_disk || {})[k] === false;    // null = worker down: not known, allowed
+      const o = el("option", null, (k === m.planned_model ? `${label(k)} (planned)` : label(k))
+        + (missing ? " — not on this machine" : ""));
+      o.value = k;
+      o.disabled = missing && k !== m.model;
+      sel.appendChild(o);
+    }
+    sel.value = m.model;
+    sel.onchange = async () => {
+      try {
+        await api("/api/model", { task: s.task, machine: m.id, model: sel.value === m.planned_model ? null : sel.value });
+        say("run-msg", `${m.label} now runs ${label(sel.value)}. Press “Load the AI model” again before starting.`, "warn");
+      } catch (e) {
+        say("run-msg", e.message, "down");
+      }
+      loadPlan();
+    };
+    row.append(el("span", null, m.label), sel);
+    dd.appendChild(row);
   }
 }
 
@@ -239,7 +274,8 @@ function renderHealth(s) {
     tb.appendChild(tr);
   }
   document.getElementById("warnings").textContent = (s.warnings || []).join("\n");
-  const PREP = { loading: "loading…", ready: "ready", error: "could not load", skipped: "uses the recording, nothing to load" };
+  const PREP = { loading: "loading…", ready: "ready", error: "could not load", skipped: "uses the recording, nothing to load",
+    missing: "not downloaded" };
   const prep = Object.entries(s.prepare || {}).map(([m, p]) =>
     `${labels[m] || m}: ${PREP[p.status] || p.status}${p.seconds ? " (" + fmtShort(p.seconds) + ")" : ""}${p.message ? " — " + p.message : ""}`);
   document.getElementById("prepare-state").textContent = prep.join("  |  ");
