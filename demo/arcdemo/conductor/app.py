@@ -75,6 +75,15 @@ def create_app(cfg: DemoConfig) -> FastAPI:
     app.mount("/replay-media", StaticFiles(directory=cfg.replay_dir), name="replay")
     app.mount("/media-input/data", StaticFiles(directory=ROOT / "data"), name="inputs")
 
+    @app.middleware("http")
+    async def revalidate_pages(request, call_next):
+        """Pages and their scripts: the browser asks for the newest version each time (a 304 when
+        unchanged), so a page opened before a git pull never runs an old operator.js."""
+        resp = await call_next(request)
+        if request.url.path.startswith("/static/") or request.url.path in ("/operator", "/stage"):
+            resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
     @app.get("/")
     def root() -> RedirectResponse:
         return RedirectResponse("/operator")
