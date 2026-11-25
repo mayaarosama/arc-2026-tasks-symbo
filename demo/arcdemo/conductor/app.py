@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import mimetypes
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -21,6 +22,8 @@ from .core import Conductor
 from .moderation import check_prompt
 
 STATIC = Path(__file__).parent / "static"
+# Windows can map .js to text/plain in the registry; browsers then refuse ES modules (layout3d.js).
+mimetypes.add_type("text/javascript", ".js")
 
 
 class RoundBody(BaseModel):

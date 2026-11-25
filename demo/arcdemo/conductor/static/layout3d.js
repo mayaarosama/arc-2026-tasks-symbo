@@ -122,6 +122,21 @@ class View {
     this.items = new Map();      // "room-i" -> {group, born, o, flag}
     this.roomKey = null;
     this.phase = Math.random() * 10;
+    this.cam = { az: 0, el: 0, zoom: 1 };        // viewer's offsets: drag rotates, wheel zooms, double-click resets
+    this.canvas.style.touchAction = "none";
+    this.canvas.addEventListener("pointerdown", (e) => { this.canvas.setPointerCapture(e.pointerId); this.drag = [e.clientX, e.clientY]; });
+    this.canvas.addEventListener("pointerup", () => { this.drag = null; });
+    this.canvas.addEventListener("pointermove", (e) => {
+      if (!this.drag) return;
+      this.cam.az -= (e.clientX - this.drag[0]) * 0.4;
+      this.cam.el = Math.max(-33, Math.min(50, this.cam.el + (e.clientY - this.drag[1]) * 0.3));
+      this.drag = [e.clientX, e.clientY];
+    });
+    this.canvas.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      this.cam.zoom = Math.max(0.3, Math.min(3, this.cam.zoom * Math.exp(e.deltaY * 0.001)));
+    }, { passive: false });
+    this.canvas.addEventListener("dblclick", () => { this.cam = { az: 0, el: 0, zoom: 1 }; });
   }
 
   buildRoom(input) {
@@ -226,7 +241,7 @@ class View {
 
     // camera: low and only slightly turned, so the room spreads across the (wide, short) cell; slow sway
     const now = performance.now();
-    const az = (25 + 8 * Math.sin(now / 8000 + this.phase)) * Math.PI / 180, el = 38 * Math.PI / 180;
+    const az = (25 + 8 * Math.sin(now / 8000 + this.phase) + this.cam.az) * Math.PI / 180, el = (38 + this.cam.el) * Math.PI / 180;
     const place = (dist) => {
       this.camera.position.set(this.centre.x + dist * Math.cos(el) * Math.sin(az), this.centre.y + dist * Math.sin(el),
         this.centre.z + dist * Math.cos(el) * Math.cos(az));
@@ -245,7 +260,7 @@ class View {
       }
       dist *= ext / 0.92;
     }
-    place(dist);
+    place(dist * this.cam.zoom);
     // walls facing the camera drop to a kerb so they never hide the room
     for (const w of this.walls) {
       const toCam = this.camera.position.clone().sub(w.mid).setY(0).normalize();
