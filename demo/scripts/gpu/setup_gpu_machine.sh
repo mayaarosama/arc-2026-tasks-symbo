@@ -423,6 +423,26 @@ verify_all() {
 
 health() { curl -sf -m 3 ${ARC_DEMO_TOKEN:+-H "X-Demo-Token: $ARC_DEMO_TOKEN"} "http://127.0.0.1:$1/health"; }
 
+WAS_RUNNING=()
+stop_workers() {   # free the GPU for the offline check: it loads every model in its own process
+    local t pidf pid stopped=0
+    for t in "${TASKS[@]}"; do
+        pidf="results/worker-$t.pid"
+        [ -f "$pidf" ] && pid="$(cat "$pidf")" && kill -0 "$pid" 2>/dev/null || continue
+        # unload first, so llama-server is stopped cleanly instead of left holding VRAM
+        curl -s -m 10 -X POST ${ARC_DEMO_TOKEN:+-H "X-Demo-Token: $ARC_DEMO_TOKEN"} -H "Content-Type: application/json" \
+            -d '{}' "http://127.0.0.1:${PORT[$t]}/unload" >/dev/null 2>&1
+        kill "$pid" 2>/dev/null
+        local _; for _ in $(seq 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
+        kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
+        rm -f "$pidf"; WAS_RUNNING+=("$t"); stopped=$((stopped + 1))
+        echo "stopped $t worker (pid $pid)"
+    done
+    [ $stopped -gt 0 ] || echo "no workers running"
+    command -v nvidia-smi >/dev/null && nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader
+    return 0
+}
+
 start_worker() {   # task
     local task="$1" port="${PORT[$1]}" pidf="results/worker-$1.pid"
     if [ -f "$pidf" ] && kill -0 "$(cat "$pidf")" 2>/dev/null && health "$port" >/dev/null; then
@@ -545,14 +565,17 @@ main() {
 
     run_step "capacity check + downloads" "" downloads
     export -n HF_TOKEN; unset HF_TOKEN                       # offline from here on
+    run_step "stop running workers" "" stop_workers
     run_step "offline check" "" verify_all || true
 
-    if [ $START = 1 ]; then
-        for t in "${TASKS[@]}"; do
+    # --no-start still brings back the workers this run stopped
+    local restart=("${TASKS[@]}"); [ $START = 1 ] || restart=("${WAS_RUNNING[@]}")
+    if [ ${#restart[@]} -gt 0 ]; then
+        for t in "${restart[@]}"; do
             if [ -n "${BROKEN[$t]:-}" ]; then skip "start $t worker :${PORT[$t]}" "$t" "${BROKEN[$t]}"
             else run_step "start $t worker :${PORT[$t]}" "$t" start_worker "$t" || true; fi
         done
-        if [ $CONDUCTOR = 1 ]; then run_step "start conductor :8000" "" start_conductor || true; fi
+        if [ $START = 1 ] && [ $CONDUCTOR = 1 ]; then run_step "start conductor :8000" "" start_conductor || true; fi
     fi
 
     local failed result

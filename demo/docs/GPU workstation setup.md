@@ -311,7 +311,7 @@ done
 | --- | --- | --- |
 | `devices` | `cuda:0` for t2i, i23d, music, llm, layout | one GPU |
 | `exclusive_models` | `true` | loading a model unloads the other task's first |
-| `preload` | `t2i: [sd15]`, the rest empty | the others load on the operator's *Load the model* |
+| `preload` | all empty | every model loads on the operator's *Load the model*, so nothing sits in VRAM before a task starts |
 | `llama_server` | `third_party/llama.cpp/bin/llama-server` | section 4's build |
 | `llm_slots` | `8` | 2.7 GB model + 8 × 2048-token KV cache fits easily |
 
