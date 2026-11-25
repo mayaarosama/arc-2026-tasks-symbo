@@ -60,7 +60,7 @@ def test_a_photo_without_transparency_needs_the_cutout_model(monkeypatch):
     monkeypatch.setattr(P, "cutout_model_path", lambda: None)
     monkeypatch.setattr(P, "_SESSION", None)
     jpeg = png(object_on(bg=(210, 210, 215, 255), mode="RGB"), "JPEG")
-    with pytest.raises(P.Rejected, match="download_weights.py --cutout"):
+    with pytest.raises(P.Rejected, match="scripts.common.download_weights --cutout"):
         P.prepare(jpeg)
 
 

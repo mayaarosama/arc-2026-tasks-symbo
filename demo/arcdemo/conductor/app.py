@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 from .config import ROOT, DemoConfig
 from .core import Conductor
-from .moderation import check_prompt
+from .tasks import HANDLERS, handler
 
 STATIC = Path(__file__).parent / "static"
 # Windows can map .js to text/plain in the registry; browsers then refuse ES modules (layout3d.js).
@@ -39,17 +39,8 @@ class ViewBody(BaseModel):
     view: str
 
 
-class PromptBody(BaseModel):
-    prompt: str
-
-
 class SegmentBody(BaseModel):
     segment_id: str
-
-
-class UploadBody(BaseModel):
-    name: str = "picture"
-    data_url: str           # data:image/...;base64,... (the browser's FileReader), up to ~14 MB
 
 
 class ModelPickBody(BaseModel):
@@ -77,17 +68,6 @@ def create_app(cfg: DemoConfig) -> FastAPI:
     app.mount("/media", StaticFiles(directory=cfg.session_dir), name="media")
     app.mount("/replay-media", StaticFiles(directory=cfg.replay_dir), name="replay")
     app.mount("/media-input/data", StaticFiles(directory=ROOT / "data"), name="inputs")
-    if cfg.layout_catalog:   # Task 8 furniture models, from the catalogue's assets_dir
-        app.mount("/layout-assets", StaticFiles(directory=ROOT / cfg.layout_catalog["assets_dir"]), name="layout-assets")
-
-    @app.get("/api/layout_catalog")
-    def layout_catalog() -> dict:
-        """The furniture catalogue (data/layout/furniture.json or demo.yaml layout_catalog) for the 3D view:
-        each class's model file, props and rug, with the URL its files are served from."""
-        if not cfg.layout_catalog:
-            raise HTTPException(404, "no layout task in this config")
-        c = cfg.layout_catalog
-        return {"assets_url": "/layout-assets/", "sha": c["sha"], "furniture": c["furniture"], "rooms": c["rooms"]}
 
     @app.middleware("http")
     async def revalidate_pages(request, call_next):
@@ -150,33 +130,15 @@ def create_app(cfg: DemoConfig) -> FastAPI:
         except KeyError as e:
             raise HTTPException(404, str(e))
 
-    @app.get("/api/layout_view")
-    def layout_view_api(input_id: str) -> dict:
-        """A layout input plus its wall names and one-sentence request (operator plan thumbnail)."""
-        from .core import layout_view
-        try:
-            item = cfg.input("layout", input_id)
-        except KeyError as e:
-            raise HTTPException(404, str(e))
-        return {**item, **layout_view(item)}
-
     @app.get("/api/prompt")
     def prompt_text(segment_id: str, input_id: str) -> dict:
-        """What the model will be sent for this segment and input (layout and llm tasks)."""
-        from .core import layout_prompt_text
+        """What the model will be sent for this segment and input (text: None for tasks without one)."""
         try:
             seg = cfg.segment(segment_id)
             item = cfg.input(seg["task"], input_id)
         except KeyError as e:
             raise HTTPException(404, str(e))
-        if seg["task"] == "layout":
-            mids = [m["id"] for m in cfg.machines]
-            s = cond.settings("layout", seg["protocol"], mids[0]) if mids else {}
-            return {"task": "layout", "text": layout_prompt_text(item, s.get("max_objects"), s.get("layout_prompt"))}
-        if seg["task"] == "llm":
-            from ..worker.backends.llm import SYSTEM
-            return {"task": "llm", "text": f"=== system ===\n{SYSTEM}\n\n=== user ===\n{item.get('prompt', '')}"}
-        return {"task": seg["task"], "text": None}
+        return {"task": seg["task"], "text": handler(seg["task"]).prompt_text(cond, seg, item)}
 
     @app.post("/api/model")
     def pick_model(body: ModelPickBody) -> dict:
@@ -190,35 +152,6 @@ def create_app(cfg: DemoConfig) -> FastAPI:
         except RuntimeError as e:
             raise HTTPException(409, str(e))
 
-    @app.get("/api/i23d/spec")
-    def upload_spec() -> dict:
-        """What an uploaded picture must be like (shown next to the upload box)."""
-        from ..imageprep import INPUT_SPEC, cutout_model_path
-        return {"spec": [{"what": a, "rule": b} for a, b in INPUT_SPEC],
-                "cutout_installed": cutout_model_path() is not None}
-
-    @app.post("/api/i23d/upload")
-    async def upload(body: UploadBody) -> dict:
-        """An operator's picture for image-to-3D: checked, cut out and normalised here, once, so every
-        machine gets the same input. 422 with the reason when it cannot be used."""
-        import base64
-        import binascii
-
-        from ..imageprep import MAX_BYTES, Rejected
-        head, _, b64 = body.data_url.partition(",")
-        if not head.startswith("data:") or ";base64" not in head:
-            raise HTTPException(400, "expected a data URL (data:image/...;base64,...)")
-        if len(b64) > MAX_BYTES * 4 // 3 + 16:
-            raise HTTPException(422, f"The file is larger than {MAX_BYTES // 2**20} MB.")
-        try:
-            data = base64.b64decode(b64, validate=True)
-        except (binascii.Error, ValueError):
-            raise HTTPException(400, "the picture is not valid base64")
-        try:   # the cut-out takes a second or two: keep the conductor's loop (health, rounds) running
-            return await asyncio.to_thread(cond.add_upload, body.name, data)
-        except Rejected as e:
-            raise HTTPException(422, str(e))
-
     @app.post("/api/prepare")
     async def prepare(body: SegmentBody) -> dict:
         return await cond.prepare(body.segment_id)
@@ -230,8 +163,7 @@ def create_app(cfg: DemoConfig) -> FastAPI:
         cond.view = body.view
         return {"view": cond.view}
 
-    @app.post("/api/moderate")
-    def moderate(body: PromptBody) -> dict:
-        return check_prompt(body.prompt)
-
+    # ---- each task's own routes, in show order (tasks/<task>.py) ----------------------------
+    for h in HANDLERS.values():
+        h.routes(app, cfg, lambda: cond)
     return app

@@ -2,7 +2,7 @@ That message means that device is missing one or both of the things the cut-out 
 
 | Message | What's missing | Fix |
 | --- | --- | --- |
-| "The cut-out model is not installed here… (`python scripts/download_weights.py --cutout`)" | the model file `weights/u2net/u2net.onnx` | download it |
+| "The cut-out model is not installed here… (`python -m scripts.common.download_weights --cutout`)" | the model file `weights/u2net/u2net.onnx` | download it |
 | "The cut-out needs onnxruntime: `pip install -r requirements/conductor.txt`" | the `onnxruntime` package in the Python environment the conductor runs from | install the conductor requirements |
 
 The conductor setup script fixes both in one go. It needs network access, and you run it on the device running the conductor.
@@ -13,8 +13,8 @@ cd demo
 scripts/cpu/cpu_box_linux.sh conductor
 # or by hand:
 .venv/bin/pip install -r requirements/conductor.txt
-.venv/bin/python scripts/download_weights.py --cutout
-.venv/bin/python scripts/verify_offline.py --cutout
+.venv/bin/python -m scripts.common.download_weights --cutout
+.venv/bin/python -m scripts.common.verify_offline --cutout
 ```
 
 **Windows**

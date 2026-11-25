@@ -1,6 +1,9 @@
-// Shared by stage.html and operator.html: state polling, clock maths, formatting.
+// Shared by stage.html and operator.html: state polling, clock maths, formatting, and what each task
+// says about its settings and outputs. Shared code first, then one section per task in show order
+// (Task 1 t2i, 2 i23d, 3 music, 4 llm, 8 layout); TASK_TEXT holds each task's wording.
 "use strict";
 
+// ---------------------------------------------------------------- shared -----------------
 const Demo = {
   state: null,
   offset: 0,           // server_now - client now, so clocks agree with the conductor
@@ -67,49 +70,6 @@ function fmtShort(s) {
   return (s / 3600).toFixed(1) + " h";
 }
 
-function settingsText(task, st) {
-  if (!st) return "";
-  if (task === "t2i") return `${st.width}×${st.height} · ${st.steps} steps · ×${st.batch}`;
-  if (task === "i23d") {
-    const parts = [];
-    if (st.resolution) parts.push(`${st.resolution}³`);
-    if (st.texture_size) parts.push(`${st.texture_size}px texture`);
-    return parts.join(" · ");
-  }
-  if (task === "music") return `${st.length_s || "?"} s tracks`;
-  if (task === "llm") return `${st.streams || 1} stream${st.streams > 1 ? "s" : ""} · ${st.max_tokens} tokens`;
-  if (task === "layout") return `${st.streams || 1} room${st.streams > 1 ? "s" : ""} at once`;
-  return "";
-}
-
-// Plain-language names, shared by the operator page and the stage.
-const TASK_NAME = { t2i: "Text → Image", i23d: "Image → 3D model", music: "Text → Music", llm: "Language model", layout: "Floor plan → furnished room" };
-
-// What one machine is expected to produce with these settings.
-function expectedOutput(task, st, budget) {
-  if (!st) return "";
-  if (task === "t2i") {
-    const n = st.batch || 1;
-    return `${n} image${n === 1 ? "" : "s"} · ${st.width}×${st.height} · ${st.steps} steps`;
-  }
-  if (task === "i23d") return `1 textured 3D model${st.texture_size ? ` · ${st.texture_size}px texture` : ""}`;
-  if (task === "music") {
-    const len = st.length_s || "?";
-    return st.repeat_until_budget && budget ? `As many ${len}-second tracks as fit in ${budget} s` : `1 track · ${len} s`;
-  }
-  if (task === "llm") {
-    const n = st.streams || 1;
-    return st.repeat_until_budget && budget ? `${n === 1 ? "1 reply" : n + " replies"} at once, as many tokens as fit in ${budget} s`
-      : `${n} repl${n === 1 ? "y" : "ies"} · ${st.max_tokens} tokens`;
-  }
-  if (task === "layout") {
-    const n = st.streams || 1;
-    return st.repeat_until_budget && budget ? `${n === 1 ? "1 room" : n + " rooms"} at once, as many as fit in ${budget} s`
-      : "1 furnished room, one object at a time";
-  }
-  return "";
-}
-
 // A protocol may carry a variant ("iso_quality+fix": its own settings in demo.yaml); the stage
 // only cares about the base protocol.
 const baseProtocol = (p) => String(p || "").split("+")[0];
@@ -122,9 +82,73 @@ function protocolText(protocol, budget) {
 
 function fmtInt(n) { return n == null ? "—" : Math.round(n).toLocaleString("en-US"); }
 
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+// ---------------------------------------------------------------- per task ---------------
+// Plain-language names, shared by the operator page and the stage.
+const TASK_NAME = { t2i: "Text → Image", i23d: "Image → 3D model", music: "Text → Music", llm: "Language model", layout: "Floor plan → furnished room" };
+
+// TASK_TEXT[task].settings(st): the settings in one line.
+// TASK_TEXT[task].expected(st, budget): what one machine is expected to produce with these settings.
+const TASK_TEXT = {};
+
+// ---- Task 1: text to image
+TASK_TEXT.t2i = {
+  settings: (st) => `${st.width}×${st.height} · ${st.steps} steps · ×${st.batch}`,
+  expected(st) {
+    const n = st.batch || 1;
+    return `${n} image${n === 1 ? "" : "s"} · ${st.width}×${st.height} · ${st.steps} steps`;
+  },
+};
+
+// ---- Task 2: image to 3D
+TASK_TEXT.i23d = {
+  settings(st) {
+    const parts = [];
+    if (st.resolution) parts.push(`${st.resolution}³`);
+    if (st.texture_size) parts.push(`${st.texture_size}px texture`);
+    return parts.join(" · ");
+  },
+  expected: (st) => `1 textured 3D model${st.texture_size ? ` · ${st.texture_size}px texture` : ""}`,
+};
+
+// ---- Task 3: music
+TASK_TEXT.music = {
+  settings: (st) => `${st.length_s || "?"} s tracks`,
+  expected(st, budget) {
+    const len = st.length_s || "?";
+    return st.repeat_until_budget && budget ? `As many ${len}-second tracks as fit in ${budget} s` : `1 track · ${len} s`;
+  },
+};
+
+// ---- Task 4: language model race
+TASK_TEXT.llm = {
+  settings: (st) => `${st.streams || 1} stream${st.streams > 1 ? "s" : ""} · ${st.max_tokens} tokens`,
+  expected(st, budget) {
+    const n = st.streams || 1;
+    return st.repeat_until_budget && budget ? `${n === 1 ? "1 reply" : n + " replies"} at once, as many tokens as fit in ${budget} s`
+      : `${n} repl${n === 1 ? "y" : "ies"} · ${st.max_tokens} tokens`;
+  },
+};
+
 // llm counters: "1,234 tokens · 85 tok/s"
 function tpsText(tps) { return tps ? `${tps >= 100 ? Math.round(tps) : tps.toFixed(1)} tok/s` : ""; }
 function tokenText(tokens, tps) { return `${fmtInt(tokens)} tokens${tps ? " · " + tpsText(tps) : ""}`; }
+
+// ---- Task 8: scene construction (layout)
+TASK_TEXT.layout = {
+  settings: (st) => `${st.streams || 1} room${st.streams > 1 ? "s" : ""} at once`,
+  expected(st, budget) {
+    const n = st.streams || 1;
+    return st.repeat_until_budget && budget ? `${n === 1 ? "1 room" : n + " rooms"} at once, as many as fit in ${budget} s`
+      : "1 furnished room, one object at a time";
+  },
+};
 
 // Task 8: the floor plan as the model is told about it: outline, wall names, door. Used in the stage
 // header and on the operator page. item: a layout input (floor_plan, door) plus the conductor's
@@ -168,9 +192,11 @@ function layoutLine(o) {
   return `${o.cls} x=${n(o.x)} y=${n(o.y)} facing=${dir}`;
 }
 
-function el(tag, cls, text) {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text != null) e.textContent = text;
-  return e;
+// ---------------------------------------------------------------- lookups -----------------
+function settingsText(task, st) {
+  return st && TASK_TEXT[task] ? TASK_TEXT[task].settings(st) : "";
+}
+
+function expectedOutput(task, st, budget) {
+  return st && TASK_TEXT[task] ? TASK_TEXT[task].expected(st, budget) : "";
 }

@@ -24,7 +24,7 @@
 | Settings | Show settings for seg8 "Furnish the room": greedy decoding (temperature 0), one room at a time, up to 400 tokens |
 | Rooms | `lay-01` bedroom 3.8 × 3.4 m (8 objects); `lay-02` L-shaped living room (10); `lay-03` library with an angled wall, our own plan (10) |
 | Prompt warm-up | The shared part of the prompt (rules and two worked examples) is read once at load, off the clock |
-| Tool | `scripts/sample_layout.py --config config/worker-local-cpu.yaml` (laptop configs archived in `/home/master/mayar/archive/arc-2026-demo-laptop/`) |
+| Tool | `scripts/layout/sample_layout.py --config config/worker-local-cpu.yaml` (laptop configs archived in `/home/master/mayar/archive/arc-2026-demo-laptop/`) |
 
 ### The four prompt versions
 
@@ -201,7 +201,7 @@ Code:
 - `arcdemo/worker/backends/layout.py`: prompt v3.1, wall naming, grammar, line parsing, room checks and the prompt warm-up.
 - `arcdemo/conductor/static/layout3d.js`: the 3D stage view, plus the assets and vendored three.js beside it.
 - `arcdemo/conductor/static/layout.js`: the fallback box view.
-- `scripts/sample_layout.py`: reruns this review.
+- `scripts/layout/sample_layout.py`: reruns this review.
 
 ## Self-correction (24 November 2026)
 
@@ -223,10 +223,10 @@ Segment seg8b "Furnish and fix" (`iso_quality+fix`: greedy, `repairs: 2`, `revie
 
 ## LayoutGPT's prompt against ours (24 November 2026)
 
-LayoutGPT (Feng et al., NeurIPS 2023; code at github.com/UCSB-AI/LayoutGPT, MIT licence) run on our local model as segment seg8c "The published method" (`iso_quality+layoutgpt`). Same Qwen3.5 4B Q4_K_M, the three stage rooms, greedy decoding, the laptop's GTX 1050 Ti (Vulkan, b12608). Both prompts ran back to back on the same build. Folders: `results-local/layout-compare-gpu-layoutgpt/`, `results-local/layout-compare-gpu-v31/`. Table: `python scripts/compare_layout.py <folder> <folder>`.
+LayoutGPT (Feng et al., NeurIPS 2023; code at github.com/UCSB-AI/LayoutGPT, MIT licence) run on our local model as segment seg8c "The published method" (`iso_quality+layoutgpt`). Same Qwen3.5 4B Q4_K_M, the three stage rooms, greedy decoding, the laptop's GTX 1050 Ti (Vulkan, b12608). Both prompts ran back to back on the same build. Folders: `results-local/layout-compare-gpu-layoutgpt/`, `results-local/layout-compare-gpu-v31/`. Table: `python -m scripts.layout.compare_layout <folder> <folder>`.
 
 **What was kept from the paper:** its instruction text; its CSS-style line (`bed {length; width; height; orientation (degrees); left; top; depth}`, sizes plus the centre from the room's min corner); its condition, which gives the room's **type and size only** (no outline, no door, no walls); and its k-similar examples (the same room type, nearest by 64 × 64 floor mask).
-**What had to change:** a local model instead of GPT-4. Our example bank instead of 3D-FRONT, which needs a signed licence: 24 rule-furnished rectangular rooms, `data/layout/exemplars.json`, built by `scripts/build_layout_exemplars.py`, none identical to a stage room. K = 4 examples instead of 8, so a prompt fits a 4,096-token slot. Greedy decoding instead of temperature 0.7. A grammar for syntax only, as for v3.1. The model's written sizes are recorded, but the checks and the stage use standard sizes, as for v3.1, so only placement is compared.
+**What had to change:** a local model instead of GPT-4. Our example bank instead of 3D-FRONT, which needs a signed licence: 24 rule-furnished rectangular rooms, `data/layout/exemplars.json`, built by `scripts/layout/build_layout_exemplars.py`, none identical to a stage room. K = 4 examples instead of 8, so a prompt fits a 4,096-token slot. Greedy decoding instead of temperature 0.7. A grammar for syntax only, as for v3.1. The model's written sizes are recorded, but the checks and the stage use standard sizes, as for v3.1, so only placement is compared.
 
 | | v3.1 (ours) | LayoutGPT | v3.1 + self-correction (seg8b) |
 | --- | --- | --- | --- |

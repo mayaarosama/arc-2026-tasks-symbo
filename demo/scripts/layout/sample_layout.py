@@ -1,7 +1,7 @@
 """Task 8 review run: furnish the stage rooms with the real model and save everything for review.
 
-    python scripts/sample_layout.py --config config/worker-workstation.yaml
-    python scripts/sample_layout.py --config config/worker-workstation.yaml --rooms lay-01,lay-03
+    python -m scripts.layout.sample_layout --config config/worker-workstation.yaml
+    python -m scripts.layout.sample_layout --config config/worker-workstation.yaml --rooms lay-01,lay-03
 
 Runs the real worker code path in-process with networking OFF and the show settings
 (demo.yaml layout/iso_quality: greedy, one room at a time). Writes one folder,
@@ -23,14 +23,12 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-os.environ["HF_HUB_OFFLINE"] = "1"
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from fastapi.testclient import TestClient
 
-from fastapi.testclient import TestClient                            # noqa: E402
-
-from arcdemo.conductor.config import DemoConfig                      # noqa: E402
-from arcdemo.logs import setup_logging                               # noqa: E402
-from arcdemo.worker.app import ROOT, create_app, load_worker_config  # noqa: E402
+from arcdemo.conductor.config import DemoConfig
+from arcdemo.conductor.tasks.layout import layout_prompt_text
+from arcdemo.logs import setup_logging
+from arcdemo.worker.app import ROOT, create_app, load_worker_config
 
 TERMINAL = ("ok", "budget_exceeded", "out_of_memory", "error", "cancelled")
 
@@ -43,6 +41,7 @@ def main() -> int:
     ap.add_argument("--rooms", help="comma list of input ids (default: all)")
     ap.add_argument("--out", help="output folder (default: results-local/layout-review-<machine>-<time>)")
     a = ap.parse_args()
+    os.environ["HF_HUB_OFFLINE"] = "1"          # before the backend imports huggingface_hub: no network
 
     cfg = load_worker_config(str(Path(a.config).resolve()), ["layout"])
     os.chdir(ROOT)
@@ -102,7 +101,6 @@ def main() -> int:
 
 def write_prompt(out: Path, rooms: list, style: str | None = None) -> None:
     """The exact chat messages the model saw, for each room (LayoutGPT picks different examples per room)."""
-    from arcdemo.conductor.core import layout_prompt_text
     text = "\n\n".join(f"########## {room['id']}\n" + layout_prompt_text(room, room.get("max_objects"), style)
                        for room in rooms)
     (out / "prompt.txt").write_text(text + "\n", encoding="utf-8")

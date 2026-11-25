@@ -21,13 +21,13 @@
 #                               with the cut-out model for uploaded pictures (176 MB, runs on the CPU)
 #   --no-pull                   skip git pull
 #   --reserve-gb N              disk to keep free after downloads (default 10)
-# Env: PY (default python3.11, else python3.10), SECRETS (default ../config.txt next to demo/).
+# Env: PY (default python3.11, else python3.10), SECRETS (default demo/config.txt, gitignored).
 # Secrets are never printed. Downloads need network; the offline check and workers run offline.
 set -uo pipefail
 
 DEMO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 REPO="$(cd "$DEMO/.." && pwd)"
-SECRETS="${SECRETS:-$DEMO/./config.txt}"
+SECRETS="${SECRETS:-$DEMO/config.txt}"
 CU=https://download.pytorch.org/whl/cu128
 TORCH=2.7.1
 SF3D_DIR=third_party/stable-fast-3d
@@ -326,7 +326,7 @@ venv_music() {
 }
 venv_llm()       { mkvenv .venv-llm && .venv-llm/bin/pip install -r requirements/llm.txt; }
 venv_conductor() { mkvenv .venv && .venv/bin/pip install -r requirements/conductor.txt; }
-cutout_model()   { .venv/bin/python scripts/download_weights.py --cutout && .venv/bin/python scripts/verify_offline.py --cutout; }
+cutout_model()   { .venv/bin/python -m scripts.common.download_weights --cutout && .venv/bin/python -m scripts.common.verify_offline --cutout; }
 
 gpu_check() {   # task: torch must run a kernel on the GPU; one automatic reinstall from cu128 if it cannot
     local py; py="$(vpy "${VENV[$1]}")"
@@ -371,7 +371,7 @@ downloads() {
     [ -x "$py/bin/python" ] || { echo "no venv with huggingface_hub to run the download step"; return 1; }
     local cfgs=(--config config/demo.yaml)
     [ $SHOW_ONLY = 1 ] || cfgs+=(--config config/demo-full.yaml)
-    "$py/bin/python" scripts/gpu/plan_downloads.py --machine "$MACHINE" --vram-gb "$VRAM_GB" \
+    "$py/bin/python" -m scripts.gpu.plan_downloads --machine "$MACHINE" --vram-gb "$VRAM_GB" \
         --reserve-gb "$RESERVE" "${cfgs[@]}" --out-dir "$RUN"
 }
 
@@ -382,7 +382,7 @@ verify_group() {   # config task model...: offline check of these models, one li
     local out="$RUN/verify-$(basename "$cfg" .yaml)-$task.out"
     ( unset HF_TOKEN SF3D_USE_CPU; export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
       [ "$task" = i23d ] && export PYTHONPATH="$DEMO/$SF3D_DIR"
-      "$py" scripts/verify_offline.py --config "$WORKER_CONFIG" --demo "$cfg" --task "$task" "${args[@]}" ) > "$out" 2>&1
+      "$py" -m scripts.common.verify_offline --config "$WORKER_CONFIG" --demo "$cfg" --task "$task" "${args[@]}" ) > "$out" 2>&1
     local rc=$? line key res
     for m in "$@"; do
         line="$(grep -E "^(PASS|FAIL) +$m " "$out" | tail -n1)"

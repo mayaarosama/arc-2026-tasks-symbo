@@ -31,9 +31,9 @@ from typing import Any, Optional
 import httpx
 
 from ..schemas import TERMINAL
-from .config import ROOT, DemoConfig
-from .moderation import check_prompt
+from .config import DemoConfig
 from .replay import ReplayStore, settings_hash
+from .tasks import HANDLERS, handler
 
 log = logging.getLogger("arcdemo.conductor")
 MEDIA_SESSION = "/media"
@@ -45,54 +45,6 @@ def _llm_fields(res: dict) -> dict:
     """llm / layout counters and stream-0 content from a worker result (empty for the other tasks)."""
     out = {k: res.get(k) for k in LLM_FIELDS}
     out["objects"] = out["objects"] or []
-    return out
-
-
-def layout_view(item: dict) -> dict:
-    """What the stage shows about a layout prompt: the wall names the model uses (with their
-    end points, for the plan thumbnail), the door's wall, and the request in one plain sentence."""
-    from ..layout_prompt import _angled, _door_wall, _not_floor, walls
-    plan = item["floor_plan"]
-    named = walls(plan)
-    ends = {n: ([w["span"][0], w["fixed"]], [w["span"][1], w["fixed"]]) if w["axis"] == "x"
-            else ([w["fixed"], w["span"][0]], [w["fixed"], w["span"][1]]) for n, w in named.items()}
-    xs, ys = [p[0] for p in plan], [p[1] for p in plan]
-    shape = ("an angled wall" if _angled(plan) else "an L-shape" if _not_floor(plan) else "")
-    spec = {"floor_plan": plan, "door": item.get("door")}
-    door = _door_wall(spec) if item.get("door") else None
-    room = item["room_type"].replace("_", " ")
-    ask = (f"Furnish this {room}: {max(xs) - min(xs):g} × {max(ys) - min(ys):g} m{' with ' + shape if shape else ''}"
-           f"{', door on the ' + door + ' wall' if door else ''}, up to {item.get('max_objects', 10)} pieces, "
-           "one line each: a wall piece names its wall, a free piece gives its spot.")
-    return {"walls": ends, "door_wall": door, "ask": ask}
-
-
-def layout_prompt_text(item: dict, max_objects: Optional[int] = None, style: Optional[str] = None) -> str:
-    """The exact chat the model receives for this room, as plain text for the operator page.
-    style: None / "v3.1" (ours) or "layoutgpt" (LayoutGPT's prompt, layout_prompt.py)."""
-    from ..layout_prompt import PROMPT_VERSION, css_grammar, grammar, layoutgpt_messages, messages
-    spec = {"room_type": item["room_type"], "floor_plan": item["floor_plan"], "door": item.get("door"),
-            "max_objects": int(max_objects or item.get("max_objects") or 10)}
-    gpt = style == "layoutgpt"
-    parts = ["# prompt layoutgpt (LayoutGPT, k-similar example rooms)" if gpt else f"# prompt {PROMPT_VERSION}"]
-    for m in (layoutgpt_messages(spec) if gpt else messages(spec)):
-        parts += ["", f"=== {m['role']} ===", m["content"].rstrip()]
-    parts += ["", "=== grammar (constrains the reply's syntax only) ===", css_grammar(spec) if gpt else grammar(spec)]
-    return "\n".join(parts)
-
-
-def _layout_summary(objects: Optional[list]) -> Optional[dict]:
-    """Objects and flagged problems in the last room stream 0 worked on (None for other tasks)."""
-    if not objects:
-        return None
-    last = max(o.get("room", 0) for o in objects)
-    every = [o for o in objects if o.get("room", 0) == last]
-    room = [o for o in every if o.get("removed") is None]
-    flagged = sum(1 for o in room if o.get("issues"))
-    out = {"objects": len(room), "flagged": flagged}
-    if any("history" in o for o in every):      # self-correction: the first pass and the fixes kept
-        out.update(first_flagged=sum(1 for o in every if (o.get("history") or [o])[0].get("issues")),
-                   fixes=sum(o.get("fixes", 0) for o in every))
     return out
 
 
@@ -118,11 +70,8 @@ class Conductor:
         # Kept in picks_path (the web app passes one) so a conductor restart keeps them.
         self.picks_path = picks_path
         self.model_picks: dict[str, dict[str, str]] = self._load_picks()
-        # Operator uploads for image-to-3D: session_dir/uploads/<id>.png (+ the original), listed in
-        # uploads.json so a conductor restart still offers them.
-        self.uploads_dir = cfg.session_dir / "uploads"
-        for item in self._load_uploads():
-            cfg.add_input("i23d", item)
+        for h in HANDLERS.values():           # e.g. i23d offers the operator uploads kept from earlier
+            h.on_start(self)
 
     # ================================================================== model picks =======
     def settings(self, task: str, protocol: str, mid: str) -> dict[str, Any]:
@@ -178,41 +127,6 @@ class Conductor:
         if self.picks_path:
             self.picks_path.write_text(json.dumps(self.model_picks, indent=1), encoding="utf-8")
         return self.model_picks
-
-    # ================================================================== uploads ===========
-    def _load_uploads(self) -> list[dict]:
-        index = self.uploads_dir / "uploads.json"
-        try:
-            items = json.loads(index.read_text(encoding="utf-8")) if index.exists() else []
-        except (OSError, ValueError):
-            log.warning("ignoring unreadable %s", index)
-            return []
-        return [x for x in items if (self.cfg.session_dir / x.get("upload", "-")).is_file()]
-
-    def add_upload(self, name: str, data: bytes) -> dict:
-        """Check, cut out and normalise an operator's picture (arcdemo/imageprep.py), and offer it as an
-        image-to-3D input. Raises imageprep.Rejected with the reason. -> the input item + warnings"""
-        import hashlib
-        import re
-
-        from ..imageprep import prepare
-        prep = prepare(data)
-        digest = hashlib.sha1(data).hexdigest()[:10]
-        self.uploads_dir.mkdir(parents=True, exist_ok=True)
-        (self.uploads_dir / f"{digest}.png").write_bytes(prep.png)
-        ext = (Path(name).suffix.lower() if Path(name).suffix.lower() in (".png", ".jpg", ".jpeg", ".webp") else ".bin")
-        (self.uploads_dir / f"{digest}-original{ext}").write_bytes(data)
-        label = re.sub(r"[^\w .()-]+", " ", Path(name).stem).strip()[:40] or "Uploaded picture"
-        item = {"id": f"up-{digest}", "label": label, "tier": "upload",
-                "exposes": "An operator's own picture: live only (no recording, no reference mesh)",
-                "upload": f"uploads/{digest}.png", "input_url": f"{MEDIA_SESSION}/uploads/{digest}.png",
-                "original_url": f"{MEDIA_SESSION}/uploads/{digest}-original{ext}",
-                "seed": int(digest[:6], 16), "cutout": prep.cutout, "original_size": list(prep.original_size)}
-        self.cfg.add_input("i23d", item)
-        uploads = [x for x in self._load_uploads() if x["id"] != item["id"]] + [item]
-        (self.uploads_dir / "uploads.json").write_text(json.dumps(uploads, indent=1), encoding="utf-8")
-        log.info("upload %s (%s, %s x %s, cut-out %s)", item["id"], label, *prep.original_size, prep.cutout)
-        return {**item, "warnings": prep.warnings}
 
     # ================================================================== public state ======
     def state(self) -> dict:
@@ -384,25 +298,15 @@ class Conductor:
             raise RuntimeError("a round is still running — cancel it first")
         seg = self.cfg.segment(segment_id)
         task, protocol = seg["task"], seg["protocol"]
+        th = handler(task)
         item = self.cfg.input(task, input_id)
-        if input_id == "live":
-            if not prompt or not prompt.strip():
-                raise ValueError("live round needs a prompt")
-            mod = check_prompt(prompt)
-            if not mod["ok"] and not override:
-                raise PermissionError(f"prompt blocked: {', '.join(mod['hits'])}")
-            item["prompt"] = prompt.strip()
-        if task == "layout":
-            item.update(layout_view(item))
+        th.prepare_input(item, prompt, override)        # t2i: the live prompt; layout: the wall names
         budget = budget_override if budget_override is not None else seg.get("budget_seconds")
         if run_to_completion:
             budget = None
         ms = [m for m in self.cfg.machines if not machines or m["id"] in machines]
         rid = time.strftime("%H%M%S-") + uuid.uuid4().hex[:6]
-        caption = (seg.get("caption") or "").replace("{budget}", f"{budget:g}" if budget else "")
-        if item.get("tier") == "upload" and task == "i23d":   # the segment's caption may promise a score
-            caption = (caption + " This picture was brought today: there is no scanned original, "
-                       "so no error is measured.").strip()
+        caption = th.caption(item, (seg.get("caption") or "").replace("{budget}", f"{budget:g}" if budget else ""))
         self.round = {
             "id": rid, "segment_id": segment_id, "title": seg["title"], "caption": caption,
             "task": task, "protocol": protocol, "budget_seconds": budget, "warmup": bool(seg.get("warmup")),
@@ -587,7 +491,7 @@ class Conductor:
                           "MOCK" if cell["mock"] else "LIVE")
                 self._show_full_recording(rnd, mid, f"Time up at {budget:g} s", budget)
                 return
-            if budget is not None and task in ("t2i", "llm", "layout") and elapsed > budget + self.cfg.grace:
+            if budget is not None and handler(task).hard_budget and elapsed > budget + self.cfg.grace:
                 await self._post_quiet(f"{url}/jobs/{job['run_id']}/cancel", f"cancel {mid}")
                 await self._fallback(rnd, mid, f"no result {self.cfg.grace:g}s after the budget")
                 return
@@ -602,21 +506,14 @@ class Conductor:
         if status == "out_of_memory":
             cell["note"] = "Out of memory — this model does not fit on this machine"
         elif status == "budget_exceeded":
-            done, req = res.get("completed", 0), res.get("requested") or 0
-            if task == "i23d" and done:
-                cell["note"] = f"Finished after the bell, at {res['all_outputs_seconds']:.1f} s"
-            else:
-                cell["note"] = (f"{done} of {req} finished in {budget:g} s" if done
-                                else f"Did not finish in {budget:g} s")
+            cell["note"] = handler(task).budget_note(res, budget)
         self._log(rnd, mid, res, "MOCK" if cell["mock"] else "LIVE")
-        done = res.get("completed", 0)
-        unfinished = done == 0 or (task == "t2i" and done < (res.get("requested") or 0))
-        if (status == "budget_exceeded" and unfinished and cell["full_recording"] and self.allow_replay
-                and self._has_full_recording(rnd, mid)):
+        if (status == "budget_exceeded" and handler(task).unfinished(res) and cell["full_recording"]
+                and self.allow_replay and self._has_full_recording(rnd, mid)):
             self._show_full_recording(rnd, mid, f"Time up at {budget:g} s", budget)
             return
-        if task == "i23d" and cell["outputs"]:
-            await self._score(rnd, mid)
+        if cell["outputs"]:
+            await handler(task).after_result(self, rnd, mid)   # i23d: score against the scan
 
     def _job_request(self, task: str, protocol: str, item: dict, s: dict, budget: Optional[float]) -> dict:
         job: dict[str, Any] = {"run_id": uuid.uuid4().hex, "task": task, "model": s["model"],
@@ -625,22 +522,7 @@ class Conductor:
         for k, v in s.items():
             if k not in ("model", "mode", "prepare"):
                 job[k] = v
-        if task == "t2i":
-            job["prompt"] = item["prompt"]
-        elif task == "i23d":
-            if item.get("upload"):     # an operator upload: the workers do not have it, so send the picture
-                import base64
-                job["image_b64"] = base64.b64encode((self.cfg.session_dir / item["upload"]).read_bytes()).decode()
-            else:
-                job["image_path"] = item["input"]
-        elif task == "music":
-            job.update(prompt=item.get("prompt"), mode=item.get("mode"), audio_path=item.get("audio"),
-                       length_s=s.get("length_s", item.get("length_s")))
-        elif task == "llm":
-            job["prompt"] = item["prompt"]
-        elif task == "layout":
-            job.update(room_type=item["room_type"], floor_plan=item["floor_plan"], door=item.get("door"),
-                       max_objects=s.get("max_objects", item.get("max_objects")))
+        job.update(handler(task).job_fields(self, item, s))
         return job
 
     @staticmethod
@@ -759,21 +641,6 @@ class Conductor:
         cell["_operator_replay"] = True       # the live poll loop, if still going, stops following
         self._log(rnd, mid, r, "REPLAY")
 
-    # ------------------------------------------------------------------ scoring ----------
-    async def _score(self, rnd: dict, mid: str) -> None:
-        truth = rnd["input"].get("truth")
-        cell = rnd["cells"][mid]
-        if not truth or not (ROOT / truth).exists() or not cell["outputs"]:
-            return
-        cell["score"] = {"pending": True}
-        try:
-            from ..scoring import score_files
-            sc = await asyncio.to_thread(score_files, cell["outputs"][0]["path"], str(ROOT / truth))
-            cell["score"] = sc.as_dict()
-        except Exception as e:  # noqa: BLE001
-            cell["score"] = {"error": type(e).__name__}
-            log.exception("scoring %s failed", mid)
-
     # ------------------------------------------------------------------ records ----------
     def _log(self, rnd: dict, mid: str, res: dict, badge: str) -> None:
         cell = rnd["cells"][mid]
@@ -807,5 +674,5 @@ class Conductor:
                 "cells": {mid: {k: c.get(k) for k in ("mode", "status", "final_seconds", "completed",
                                                       "requested", "model_label", "score", "mock", "recorded",
                                                       "tokens", "tokens_per_second")}
-                              | {"layout": _layout_summary(c.get("objects"))}
+                              | handler(rnd["task"]).summary(c)      # layout: objects and flags
                           for mid, c in rnd["cells"].items()}}

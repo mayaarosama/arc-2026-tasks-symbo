@@ -1,6 +1,6 @@
 """Check this machine's capacity, then download only the models that fit. Run by setup_gpu_machine.sh.
 
-    python scripts/gpu/plan_downloads.py --machine workstation --vram-gb 16 \
+    python -m scripts.gpu.plan_downloads --machine workstation --vram-gb 16 \
         --config config/demo.yaml --config config/demo-full.yaml --out-dir results/setup-<time>
 
 For every model the configs give this machine (first config first: the show before the full matrix):
@@ -10,7 +10,7 @@ For every model the configs give this machine (first config first: the show befo
   2. Disk: the bytes still missing from hf-cache (files already cached are not counted) must fit in
      the free space minus --reserve-gb. Checked again before every repo, so a repo that no longer
      fits is skipped and the next smaller one may still go in.
-  3. Download (scripts/download_weights.py fetch(): skips cached files, resumes partial ones).
+  3. Download (scripts/common/download_weights.py fetch(): skips cached files, resumes partial ones).
 Writes plan.json, models.tsv (config, task, model, status, detail) and downloads.md (report section).
 --dry-run checks and plans but downloads nothing.
 """
@@ -21,13 +21,10 @@ import shutil
 import sys
 from pathlib import Path
 
-DEMO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(DEMO))
-sys.path.insert(0, str(DEMO / "scripts"))
-os.chdir(DEMO)
+from arcdemo.conductor.config import DemoConfig   # importing arcdemo first sets HF_HUB_CACHE
+from scripts.common import download_weights as dw
 
-import download_weights as dw                 # noqa: E402  (imports arcdemo first: sets HF_HUB_CACHE)
-from arcdemo.conductor.config import DemoConfig  # noqa: E402
+DEMO = Path(__file__).resolve().parents[2]
 
 # GPU memory a model needs, GB. Task 2 spec figures (third-party, unverified): measure and update.
 VRAM_GB = {"trellis2-4b": 24, "trellis-image-large": 16, "sf3d": 6}
@@ -63,6 +60,7 @@ def classify(detail: str) -> str:
 
 
 def main() -> int:
+    os.chdir(DEMO)                    # config paths are relative to demo/
     ap = argparse.ArgumentParser()
     ap.add_argument("--machine", required=True)
     ap.add_argument("--config", action="append", required=True, help="in priority order (repeatable)")

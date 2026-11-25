@@ -7,8 +7,8 @@ For each object in data/i23d/stage_objects.json:
      A render, not a photo, so the input is byte-identical on every machine; real alpha, so
      TRELLIS/SF3D skip background removal.
 
-    python scripts/prepare_gso.py                 # the three stage objects
-    python scripts/prepare_gso.py --candidates    # also render every alternate into a contact sheet
+    python -m scripts.i23d.prepare_gso                 # the three stage objects
+    python -m scripts.i23d.prepare_gso --candidates    # also render every alternate into a contact sheet
                                                   # data/i23d/candidates.png, to pick objects from
 
 Needs: trimesh, pyrender (requirements/gso.txt, two-step install; offscreen OpenGL works on a desktop; on headless Linux set
@@ -26,7 +26,7 @@ import requests
 import trimesh
 from PIL import Image, ImageDraw
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]       # demo/
 DATA = ROOT / "data" / "i23d"
 FUEL = "https://fuel.gazebosim.org/1.0/GoogleResearch/models/{name}/1/{name}.zip"
 log = logging.getLogger("prepare_gso")

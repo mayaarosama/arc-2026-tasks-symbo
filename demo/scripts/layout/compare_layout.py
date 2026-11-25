@@ -1,6 +1,6 @@
-"""Compare Task 8 review runs (scripts/sample_layout.py output folders) prompt against prompt.
+"""Compare Task 8 review runs (scripts/layout/sample_layout.py output folders) prompt against prompt.
 
-    python scripts/compare_layout.py results-local/layout-compare-gpu-v31 results-local/layout-compare-gpu-layoutgpt
+    python -m scripts.layout.compare_layout results-local/layout-compare-gpu-v31 results-local/layout-compare-gpu-layoutgpt
 
 Per folder and room: objects, flags (outside / overlap / door), wall pieces really standing against
 a wall (back within 5 cm of a straight wall, facing into the room), objects copied from an example
@@ -13,9 +13,7 @@ import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from arcdemo.layout_prompt import (EXAMPLES, WALL_PIECES, footprint, parse_line,  # noqa: E402
+from arcdemo.layout_prompt import (EXAMPLES, WALL_PIECES, footprint, parse_line,
                                    similar_rooms, walls)
 
 

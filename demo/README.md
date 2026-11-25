@@ -24,7 +24,7 @@ model page first. Machines differ only in settings (batch, steps, texture size),
 
 `config/demo-full.yaml` is the original plan: the largest model each machine can run. Use it in
 place of `demo.yaml` once these weights are on each machine (download with
-`python scripts/download_weights.py --config config/demo-full.yaml --machine <id> --task <task>`):
+`python -m scripts.common.download_weights --config config/demo-full.yaml --machine <id> --task <task>`):
 
 | Task | DGX H200 | Workstation (16 GB GPU) | CPU box |
 | --- | --- | --- | --- |
@@ -57,9 +57,9 @@ Also switch each worker's `preload` to the full-matrix models named in its comme
 
 ```bash
 python -m venv .venv && .venv/Scripts/pip install -r requirements/conductor.txt   # Linux/mac: .venv/bin/pip
-python scripts/run_mock_demo.py          # 3 mock workers + conductor
+python -m scripts.common.run_mock_demo          # 3 mock workers + conductor
 # operator: http://127.0.0.1:8000/operator     stage: http://127.0.0.1:8000/stage
-python scripts/rehearse.py --config config/demo-mock.yaml --segments seg2,seg3 --repeat 1   # fills replay-mock/
+python -m scripts.common.rehearse --config config/demo-mock.yaml --segments seg2,seg3 --repeat 1   # fills replay-mock/
 python -m pytest                         # 34 tests (the Stable Audio ones need torch): config validation, scoring, worker lifecycle, conductor + failure drill
 ```
 
@@ -148,21 +148,21 @@ The manual steps, for Windows or for running one step at a time:
 
 ```bash
 export HF_TOKEN=<from config.txt>                       # account must have accepted every gated licence
-python scripts/download_weights.py --machine <dgx|workstation> --task t2i     # SD 1.5
-python scripts/download_weights.py --machine <dgx|workstation> --task i23d    # SF3D + its two encoders
-python scripts/download_weights.py --machine <dgx|workstation> --task music   # Stable Audio 3 Small
-python scripts/download_weights.py --machine <dgx|workstation> --task llm     # Qwen3.5 4B, Q4_K_M file only
+python -m scripts.common.download_weights --machine <dgx|workstation> --task t2i     # SD 1.5
+python -m scripts.common.download_weights --machine <dgx|workstation> --task i23d    # SF3D + its two encoders
+python -m scripts.common.download_weights --machine <dgx|workstation> --task music   # Stable Audio 3 Small
+python -m scripts.common.download_weights --machine <dgx|workstation> --task llm     # Qwen3.5 4B, Q4_K_M file only
 # t2i env:   CUDA torch first, then  pip install -r requirements/t2i-gpu.txt
 # i23d env:  CUDA torch, then clone third_party/stable-fast-3d and install as in scripts/cpu/ (SF3D);
 #            for the full matrix, TRELLIS instead: header of requirements/i23d.txt (Linux only)
 # music env: header of requirements/music.txt (torch 2.7.1 + third_party/stable-audio-3)
 # llm env:   requirements/llm.txt (no torch) + the pinned llama.cpp release in third_party/llama.cpp/bin
 unset HF_TOKEN; export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
-python scripts/verify_offline.py --config config/worker-<machine>.yaml --task t2i    # must print PASS
-python scripts/verify_offline.py --config config/worker-<machine>.yaml --task i23d
-python scripts/verify_offline.py --config config/worker-<machine>.yaml --task music
-python scripts/verify_offline.py --config config/worker-<machine>.yaml --task llm
-python scripts/verify_offline.py --config config/worker-<machine>.yaml --task layout   # same weights as llm
+python -m scripts.common.verify_offline --config config/worker-<machine>.yaml --task t2i    # must print PASS
+python -m scripts.common.verify_offline --config config/worker-<machine>.yaml --task i23d
+python -m scripts.common.verify_offline --config config/worker-<machine>.yaml --task music
+python -m scripts.common.verify_offline --config config/worker-<machine>.yaml --task llm
+python -m scripts.common.verify_offline --config config/worker-<machine>.yaml --task layout   # same weights as llm
 ```
 
 For the full matrix add `--config config/demo-full.yaml` to `download_weights.py` and
@@ -194,7 +194,7 @@ powershell -ExecutionPolicy Bypass -File scripts\cpu\cpu_box_windows.ps1 conduct
 On a GPU machine, `setup_gpu_machine.sh --conductor` does the same. The cut-out runs on the CPU (about
 1–2 s a picture). With `onnxruntime-gpu` installed in place of `onnxruntime` it uses the GPU, and it
 falls back to the CPU if CUDA does not work; `ARC_CUTOUT_DEVICE=cpu` forces the CPU. Check it any
-time with `python scripts/verify_offline.py --cutout`.
+time with `python -m scripts.common.verify_offline --cutout`.
 
 Edit the worker URLs in `config/demo.yaml`, then:
 
@@ -208,9 +208,9 @@ Projector: `/stage` full-screen (F11). Operator: `/operator`.
 ## 4. Rehearsal → replay table
 
 ```bash
-python scripts/rehearse.py --segments seg0,seg2,seg3,seg3q --repeat 3    # prints the timing table
-python scripts/rehearse.py --segments seg1 --repeat 1 --max-wait 14400   # overnight: CPU iso-quality
-python scripts/rehearse.py --segments seg0,seg2,seg3 --full --repeat 1 --max-wait 14400   # CPU full runs
+python -m scripts.common.rehearse --segments seg0,seg2,seg3,seg3q --repeat 3    # prints the timing table
+python -m scripts.common.rehearse --segments seg1 --repeat 1 --max-wait 14400   # overnight: CPU iso-quality
+python -m scripts.common.rehearse --segments seg0,seg2,seg3 --full --repeat 1 --max-wait 14400   # CPU full runs
 ```
 
 The median run per cell becomes its replay record in `replay/`. Change a setting in `config/demo.yaml`
@@ -260,7 +260,7 @@ What makes a good picture (also under *What makes a good picture* on the page):
 | Avoid | Glass and see-through objects, mirrors, thin wires or hair, text-heavy surfaces, people, several objects | Known SF3D failure cases; people also raise consent questions |
 
 To bring a picture to the size and format first (upright, shortest side 512 px, PNG under 10 MB):
-`python scripts/fit_upload.py IMG_2089.jpeg` writes `IMG_2089-fit.png`. It cannot fix the content.
+`python -m scripts.i23d.fit_upload IMG_2089.jpeg` writes `IMG_2089-fit.png`. It cannot fix the content.
 
 Refused with a reason on the page: files that are not PNG/JPEG/WebP or are over 10 MB, pictures
 under 256 px, a cut-out that finds no object or keeps almost the whole picture, and an object
@@ -294,7 +294,7 @@ The Windows dev-laptop configs used for the Task 8 review (`demo-local*.yaml`, `
 
 **At the show:** each machine runs the layout worker on port 8105 (section 2, `--task layout`, llm
 env), and the parts are *Furnish the room* (seg8) and *Rooms in a minute* (seg9).
-**Without a model:** `scripts/run_mock_demo.py`, where the mock workers serve layout too, with placeholder rooms.
+**Without a model:** `scripts/common/run_mock_demo.py`, where the mock workers serve layout too, with placeholder rooms.
 
 1. Pick **Furnish the room**. *What will run* shows the floor plan with the wall names the model uses,
    the request in one sentence, and, under **Prompt**, exactly what the model is sent (rules, two

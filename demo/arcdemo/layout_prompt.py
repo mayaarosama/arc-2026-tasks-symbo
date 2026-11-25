@@ -513,7 +513,7 @@ def summarise(objects: list[dict]) -> dict:
 #   - k-similar examples: the K rooms of the same type whose 64x64 floor masks differ least (mean
 #     squared difference), shown as user "Condition: ... Layout:" / assistant lines.
 # Changed: metres (their metre mode); our example rooms (data/layout/exemplars.json, built by
-# scripts/build_layout_exemplars.py) instead of 3D-FRONT, which needs a signed licence; K=4 (not 8)
+# scripts/layout/build_layout_exemplars.py) instead of 3D-FRONT, which needs a signed licence; K=4 (not 8)
 # so a prompt fits llama-server's 4,096-token slot; the stage's greedy decoding, not GPT-4 at 0.7.
 # Sizes the model writes are kept on the object (written_size); the checks and the stage use the
 # standard sizes, as for v3.1, so the comparison is about where things go. A grammar fixes the

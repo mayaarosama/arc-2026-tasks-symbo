@@ -8,7 +8,7 @@ front of the sofa and the TV stand facing it...). Every placement passes the sam
 the stage (layout_prompt.check): nothing outside, overlapping or in front of the door. No room
 here has a stage room's floor plan.
 
-    python scripts/build_layout_exemplars.py          # rewrites data/layout/exemplars.json
+    python -m scripts.layout.build_layout_exemplars          # rewrites data/layout/exemplars.json
 """
 from __future__ import annotations
 
@@ -17,12 +17,10 @@ import random
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from arcdemo.layout_prompt import (FURNITURE, _door_wall, check, css_line, parse_line,  # noqa: E402
+from arcdemo.layout_prompt import (FURNITURE, _door_wall, check, css_line, parse_line,
                                    walls)
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]       # demo/
 OUT = ROOT / "data" / "layout" / "exemplars.json"
 OPPOSITE = {"south": "north", "north": "south", "east": "west", "west": "east"}
 SIZES = [(3.2, 3.0), (3.6, 3.2), (4.0, 3.4), (4.2, 3.8), (4.6, 3.6), (5.0, 4.0), (5.4, 4.4), (6.0, 4.6)]

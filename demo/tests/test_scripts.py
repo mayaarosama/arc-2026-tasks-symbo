@@ -2,7 +2,7 @@
 Nothing here downloads, starts a show or touches the GPU."""
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import json
 import shutil
 import subprocess
@@ -23,22 +23,25 @@ def find(name: str) -> Path:
     return hits[0]
 
 
+def module(name: str) -> str:
+    """scripts/<group>/<name>.py -> scripts.<group>.<name> (scripts run as modules from demo/)."""
+    return ".".join(find(name).relative_to(ROOT).with_suffix("").parts)
+
+
 def load(name: str):
-    path = find(name)
-    spec = importlib.util.spec_from_file_location(f"script_{path.stem}", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return importlib.import_module(module(name))
 
 
 def run(*args, timeout=60) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, *map(str, args)], cwd=ROOT, capture_output=True, text=True, timeout=timeout)
+    """python -m <module> args..., from demo/, as the docs say."""
+    return subprocess.run([sys.executable, "-m", *map(str, args)], cwd=ROOT, capture_output=True, text=True,
+                          timeout=timeout)
 
 
 @pytest.mark.parametrize("name", ["download_weights.py", "verify_offline.py", "rehearse.py", "run_mock_demo.py",
                                   "sample_layout.py", "prepare_gso.py", "plan_downloads.py", "fit_upload.py"])
 def test_script_help_runs(name):
-    r = run(find(name), "--help")
+    r = run(module(name), "--help")
     assert r.returncode == 0, r.stderr[-2000:]
     assert "usage:" in r.stdout
 
@@ -65,7 +68,7 @@ def test_secrets_file_default_matches_its_own_comment():
         text = find(name).read_text(encoding="utf-8")
         documented = re.search(r"SECRETS \(default ([^ )]+)", text).group(1)
         code = next(ln for ln in text.splitlines() if ln.strip().startswith("SECRETS=")).split(":-", 1)[1].rstrip('}"')
-        code = code.replace("$DEMO/./", "demo/").replace("$DEMO/../", "../")
+        code = code.replace("$DEMO/../", "../").replace("$DEMO/", "demo/")
         assert documented.split("/")[0] == code.split("/")[0], f"{name}: comment says {documented}, code uses {code}"
 
 
@@ -83,7 +86,7 @@ def test_download_weights_picks_every_model_a_machine_runs():
 
 
 def test_download_weights_dry_run_lists_without_fetching():
-    r = run(find("download_weights.py"), "--model", "sd15", "--dry-run")
+    r = run(module("download_weights.py"), "--model", "sd15", "--dry-run")
     assert r.returncode == 0, r.stderr[-2000:]
 
 
@@ -95,7 +98,7 @@ def test_rehearse_cell_time():
 
 
 def test_verify_offline_without_arguments_explains_itself():
-    r = run(find("verify_offline.py"))
+    r = run(module("verify_offline.py"))
     assert r.returncode != 0 or "usage" in (r.stdout + r.stderr).lower()
 
 
@@ -159,7 +162,7 @@ def test_sample_layout_review_page_and_prompt_writers(tmp_path):
 
 # ------------------------------------------------------------------ CPU / GPU machine tools
 def test_check_cpu_reports_without_failing():
-    r = run(find("check_cpu.py"))
+    r = run(module("check_cpu.py"))
     assert r.returncode == 0, r.stderr[-2000:]
     assert "cpu_threads:" in r.stdout
 

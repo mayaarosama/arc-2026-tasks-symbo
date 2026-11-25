@@ -216,7 +216,7 @@ def test_layout_review_fixes_the_finished_room(tmp_path):
 def test_uploaded_image_is_checked_before_it_is_saved(tmp_path):
     import base64
 
-    from arcdemo.worker.app import save_upload
+    from arcdemo.worker.tasks import save_upload
     good = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"x" * 10).decode()
     assert save_upload(good, tmp_path, "abc123").read_bytes().startswith(b"\x89PNG")
     with pytest.raises(ValueError, match="PNG"):

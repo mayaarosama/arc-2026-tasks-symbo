@@ -31,6 +31,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
 
 from ..schemas import TERMINAL, HealthInfo, JobRequest, JobResult, LoadRequest
+from . import tasks
 from .backends.base import Backend, JobContext, backend_class, free_memory, is_oom
 from .metrics import Clock
 
@@ -77,7 +78,7 @@ class ModelManager:
                 raise ValueError(f"model '{key}' is a {spec['task']} model; this worker serves {self.cfg['tasks']}")
             name = spec["backend"]
             if self.cfg.get("mock"):   # music and llm have their own stand-ins (tone, canned text)
-                name = {"music": "music_stub", "llm": "llm_mock", "layout": "layout_mock"}.get(spec["task"], "mock")
+                name = tasks.MOCK_BACKEND[spec["task"]]
             backend = backend_class(name)(key, spec, self.cfg, self.devices_for(key))
             self.loading = key
             log.info("loading %s (%s) on %s", key, name, backend.devices)
@@ -140,9 +141,7 @@ class JobRunner:
             if self.active is not None and self.active.result.status not in TERMINAL:
                 raise HTTPException(409, f"busy with {self.active.req.run_id}")
             # 0 = throughput run (as many as fit in the budget): nothing is "missing" at the bell
-            requested = {"t2i": max(1, req.batch), "music": 0,
-                         "llm": 0 if req.repeat_until_budget else max(1, req.streams),
-                         "layout": 0 if req.repeat_until_budget else max(1, req.streams)}.get(req.task, 1)
+            requested = tasks.requested(req)
             result = JobResult(run_id=req.run_id, machine=self.cfg["machine"], task=req.task,
                                model=req.model, model_repo=self.cfg["models"].get(req.model, {}).get("repo", ""),
                                input_id=req.input_id, protocol=req.protocol, requested=requested)
@@ -168,16 +167,14 @@ class JobRunner:
     def _run(self, job: Job) -> None:
         req, r = job.req, job.result
         try:
-            if req.image_b64:              # an operator upload: write it out before the clock starts
-                req.image_path = str(save_upload(req.image_b64, Path(self.cfg["results_dir"]), req.run_id))
-                req.image_b64 = None
+            tasks.prepare_inputs(req, Path(self.cfg["results_dir"]))   # off the clock (i23d: an upload)
             r.status = "loading"
             t = time.perf_counter()
             backend = self.models.ensure(req.model)
             r.load_seconds = round(time.perf_counter() - t, 3)
             if r.load_seconds > 0.5:
                 r.message = "model was not preloaded: load time excluded from the clock but logged"
-            r.settings = {**_request_settings(req), **backend.describe(req)}
+            r.settings = {**tasks.settings_echo(req), **backend.describe(req)}
             out_dir = Path(self.cfg["results_dir"])
             ctx = JobContext(req, r, job.clock, out_dir, backend.devices, job.cancel)
             r.status = "running"
@@ -212,46 +209,6 @@ class JobRunner:
             r.elapsed_seconds = round(job.clock.now(), 3)
             log.info("[%s] %s | %d/%s outputs | all=%ss | peak=%s MB", req.run_id[:6], r.status,
                      r.completed, r.requested or "?", r.all_outputs_seconds, r.peak_memory_mb)
-
-
-def _request_settings(req: JobRequest) -> dict:
-    if req.task == "t2i":
-        return {"width": req.width, "height": req.height, "steps": req.steps,
-                "guidance": req.guidance, "batch": req.batch, "seed": req.seed}
-    if req.task == "i23d":
-        return {k: v for k, v in {"resolution": req.resolution, "texture_size": req.texture_size,
-                                  "seed": req.seed}.items() if v is not None}
-    if req.task == "llm":
-        return {"streams": req.streams, "max_tokens": req.max_tokens, "temperature": req.temperature,
-                "seed": req.seed, "repeat_until_budget": req.repeat_until_budget}
-    if req.task == "layout":
-        return {"room_type": req.room_type, "max_objects": req.max_objects, "streams": req.streams,
-                "max_tokens": req.max_tokens, "temperature": req.temperature, "seed": req.seed,
-                "repeat_until_budget": req.repeat_until_budget,
-                **({"repairs": req.repairs, "review_rounds": req.review_rounds}
-                   if req.repairs or req.review_rounds else {}),
-                **({"layout_prompt": req.layout_prompt} if req.layout_prompt else {})}
-    return {"length_s": req.length_s, "seed": req.seed, "repeat_until_budget": req.repeat_until_budget}
-
-
-def save_upload(b64: str, results_dir: Path, run_id: str) -> Path:
-    """An uploaded input image (already checked and normalised by the conductor) -> a PNG file."""
-    import base64
-    import binascii
-    import re
-    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", run_id):     # it becomes a file name
-        raise ValueError("run_id may hold only letters, digits, - and _")
-    try:
-        data = base64.b64decode(b64, validate=True)
-    except (binascii.Error, ValueError) as e:
-        raise ValueError("image_b64 is not valid base64") from e
-    if len(data) > 20 * 2**20 or not data.startswith(b"\x89PNG\r\n\x1a\n"):
-        raise ValueError("image_b64 must be a PNG of at most 20 MB")
-    d = results_dir / "inputs"
-    d.mkdir(parents=True, exist_ok=True)
-    path = d / f"{run_id}.png"
-    path.write_bytes(data)
-    return path
 
 
 def memory_report() -> dict:
@@ -325,7 +282,7 @@ def create_app(cfg: dict) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         env_cache.update(env_report(cfg))   # slow (scans installed packages): do it once, here
-        torch_tasks = [t for t in cfg["tasks"] if t not in ("llm", "layout")]   # llama-server sets its own threads
+        torch_tasks = [t for t in cfg["tasks"] if t not in tasks.OWN_THREADS]   # llama-server sets its own threads
         if any(d == "cpu" for t in torch_tasks for d in cfg["devices"].get(t, [])) and not cfg.get("mock"):
             import psutil
             import torch

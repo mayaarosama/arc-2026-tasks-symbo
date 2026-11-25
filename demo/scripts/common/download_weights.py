@@ -1,9 +1,9 @@
 """Download every model a machine needs into the Hugging Face cache. Run with network, days ahead.
 
     export HF_TOKEN=hf_...           # from config.txt (the CPU-box scripts do this); account must accept each gated licence
-    python scripts/download_weights.py --machine dgx --task t2i
-    python scripts/download_weights.py --machine workstation --task i23d --dry-run
-    python scripts/download_weights.py --cutout      # operator laptop: background removal for uploads
+    python -m scripts.common.download_weights --machine dgx --task t2i
+    python -m scripts.common.download_weights --machine workstation --task i23d --dry-run
+    python -m scripts.common.download_weights --cutout      # operator laptop: background removal for uploads
 
 The model list is derived from config/demo.yaml (every model that machine is configured to run
 for that task, in any protocol) plus the declared fallbacks, so config and downloads cannot drift.
@@ -14,10 +14,8 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from arcdemo.conductor.config import DemoConfig   # noqa: E402
-from arcdemo.weights import DEPENDENCIES          # noqa: E402,F401  (also read by plan_downloads.py)
+from arcdemo.conductor.config import DemoConfig
+from arcdemo.weights import DEPENDENCIES  # noqa: F401  (also read by plan_downloads.py)
 
 # Fallback tiers that are not in the settings matrix but must be on disk.
 FALLBACKS = {("cpu", "t2i"): ["sd15"]}
@@ -99,7 +97,7 @@ CUTOUT_BYTES = 175_997_641
 
 def fetch_cutout(dry_run: bool = False) -> None:
     import urllib.request
-    dest = Path(__file__).resolve().parents[1] / "weights" / "u2net" / "u2net.onnx"
+    dest = Path(__file__).resolve().parents[2] / "weights" / "u2net" / "u2net.onnx"
     print(f"cut-out model: {CUTOUT_URL} -> {dest}")
     if dest.is_file() and dest.stat().st_size == CUTOUT_BYTES:
         print("cached", dest)

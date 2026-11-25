@@ -1,7 +1,7 @@
 """Rehearsal matrix pass: run segments for real, record every run, fill the replay table.
 
-    python scripts/rehearse.py --config config/demo.yaml --segments seg2,seg3 --repeat 3
-    python scripts/rehearse.py --config config/demo.yaml --segments seg1 --max-wait 14400   # overnight CPU iso-quality
+    python -m scripts.common.rehearse --config config/demo.yaml --segments seg2,seg3 --repeat 3
+    python -m scripts.common.rehearse --config config/demo.yaml --segments seg1 --max-wait 14400   # overnight CPU iso-quality
 
 - Uses the same conductor code as the show, with replay fallback OFF: failures are recorded
   as failures, never papered over.
@@ -13,7 +13,7 @@
 
 Full runs (what the CPU shows on stage when its time is up, it is stopped, or it is down):
 
-    python scripts/rehearse.py --config config/demo.yaml --segments seg0,seg2,seg3 --full --repeat 1 --max-wait 14400
+    python -m scripts.common.rehearse --config config/demo.yaml --segments seg0,seg2,seg3 --full --repeat 1 --max-wait 14400
 
   runs only the machines flagged show_full_recording (override with --machines), with NO time
   limit, and saves each complete run to replay/<task>/<protocol>/<machine>/<input>/full/.
@@ -26,11 +26,9 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from arcdemo.conductor.config import DemoConfig          # noqa: E402
-from arcdemo.conductor.core import Conductor              # noqa: E402
-from arcdemo.logs import setup_logging                    # noqa: E402
+from arcdemo.conductor.config import DemoConfig
+from arcdemo.conductor.core import Conductor
+from arcdemo.logs import setup_logging
 
 log = logging.getLogger("arcdemo.rehearse")
 SAVEABLE = {"ok", "budget_exceeded", "out_of_memory"}

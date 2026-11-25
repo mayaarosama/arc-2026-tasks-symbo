@@ -2,7 +2,7 @@
 # config/demo.yaml runs one model per task on every machine. Switch to this file once the weights
 # below are on each machine (README "Full model matrix"):
 #   python -m arcdemo.conductor --config config/demo-full.yaml
-#   python scripts/download_weights.py --config config/demo-full.yaml --machine <id> --task <task>
+#   python -m scripts.common.download_weights --config config/demo-full.yaml --machine <id> --task <task>
 # Every value marked TBC is a starting point that the rehearsal pass replaces.
 
 session_dir: session          # live outputs + runs.jsonl for this show

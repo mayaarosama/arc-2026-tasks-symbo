@@ -118,23 +118,23 @@ function Invoke-Setup {
         Invoke-Step $pyLlm @("scripts/cpu/fetch_llama_cpp.py")       # the pinned CPU release, third_party\llama.cpp\bin
 
         Write-Host "== weights (HF_TOKEN from the secrets file)"
-        Invoke-Step (Get-VenvPython ".venv-t2i") @("scripts/download_weights.py", "--machine", "cpu", "--task", "t2i")
-        Invoke-Step $py3d @("scripts/download_weights.py", "--machine", "cpu", "--task", "i23d")
-        Invoke-Step $pyMusic @("scripts/download_weights.py", "--machine", "cpu", "--task", "music")
-        Invoke-Step $pyLlm @("scripts/download_weights.py", "--machine", "cpu", "--task", "llm")      # Qwen3.5 4B, one GGUF
-        Invoke-Step $pyLlm @("scripts/download_weights.py", "--machine", "cpu", "--task", "layout")   # same file: already there
+        Invoke-Step (Get-VenvPython ".venv-t2i") @("-m", "scripts.common.download_weights", "--machine", "cpu", "--task", "t2i")
+        Invoke-Step $py3d @("-m", "scripts.common.download_weights", "--machine", "cpu", "--task", "i23d")
+        Invoke-Step $pyMusic @("-m", "scripts.common.download_weights", "--machine", "cpu", "--task", "music")
+        Invoke-Step $pyLlm @("-m", "scripts.common.download_weights", "--machine", "cpu", "--task", "llm")      # Qwen3.5 4B, one GGUF
+        Invoke-Step $pyLlm @("-m", "scripts.common.download_weights", "--machine", "cpu", "--task", "layout")   # same file: already there
 
         Write-Host "== this machine"
         Invoke-Step (Get-VenvPython ".venv-t2i") @("scripts/cpu/check_cpu.py")
         Write-Host "== offline check (network use is now forbidden; a FAIL here would fail on stage)"
         Remove-Item env:HF_TOKEN
-        Invoke-Step (Get-VenvPython ".venv-t2i") @("scripts/verify_offline.py", "--config", $WorkerConfig, "--task", "t2i")
+        Invoke-Step (Get-VenvPython ".venv-t2i") @("-m", "scripts.common.verify_offline", "--config", $WorkerConfig, "--task", "t2i")
         $env:PYTHONPATH = $Sf3dDir
-        try { Invoke-Step $py3d @("scripts/verify_offline.py", "--config", $WorkerConfig, "--task", "i23d") }
+        try { Invoke-Step $py3d @("-m", "scripts.common.verify_offline", "--config", $WorkerConfig, "--task", "i23d") }
         finally { Remove-Item env:PYTHONPATH -ErrorAction SilentlyContinue }
-        Invoke-Step $pyMusic @("scripts/verify_offline.py", "--config", $WorkerConfig, "--task", "music")
-        Invoke-Step $pyLlm @("scripts/verify_offline.py", "--config", $WorkerConfig, "--task", "llm")
-        Invoke-Step $pyLlm @("scripts/verify_offline.py", "--config", $WorkerConfig, "--task", "layout")
+        Invoke-Step $pyMusic @("-m", "scripts.common.verify_offline", "--config", $WorkerConfig, "--task", "music")
+        Invoke-Step $pyLlm @("-m", "scripts.common.verify_offline", "--config", $WorkerConfig, "--task", "llm")
+        Invoke-Step $pyLlm @("-m", "scripts.common.verify_offline", "--config", $WorkerConfig, "--task", "layout")
         Write-Host "setup done. Next, as Administrator: ... cpu_box_windows.ps1 firewall"
     } finally {
         Stop-Transcript | Out-Null
@@ -152,8 +152,8 @@ function Invoke-ConductorSetup {
         $py = Get-VenvPython ".venv"
         Invoke-Step $py @("-m", "pip", "install", "-q", "--upgrade", "pip")
         Invoke-Step $py @("-m", "pip", "install", "-q", "-r", "requirements/conductor.txt")
-        Invoke-Step $py @("scripts/download_weights.py", "--cutout")       # U2-Net, 176 MB -> weights\u2net\
-        Invoke-Step $py @("scripts/verify_offline.py", "--cutout")
+        Invoke-Step $py @("-m", "scripts.common.download_weights", "--cutout")       # U2-Net, 176 MB -> weights\u2net\
+        Invoke-Step $py @("-m", "scripts.common.verify_offline", "--cutout")
         Write-Host "conductor ready:  $py -m arcdemo.conductor --config config/demo.yaml"
     } finally {
         Stop-Transcript | Out-Null

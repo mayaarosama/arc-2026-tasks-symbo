@@ -2,12 +2,12 @@
 
 Every machine must get the identical input, so this runs once, on the conductor, at upload, and
 the result (512x512 RGBA, object centred, filling 85% of the side) is what each worker receives.
-That is the same form as the stage inputs (scripts/prepare_gso.py renders 512x512 RGBA).
+That is the same form as the stage inputs (scripts/i23d/prepare_gso.py renders 512x512 RGBA).
 
 Background removal: the U^2-Net model that rembg (and SF3D's own run.py) use by default,
 run directly with onnxruntime, so the conductor needs no rembg / OpenCV stack. Same preprocessing
 as rembg 2.0.57 (320x320, ImageNet normalisation, min-max scaled mask). The model file is fetched
-once with  python scripts/download_weights.py --cutout  (weights/u2net/u2net.onnx, or $U2NET_HOME,
+once with  python -m scripts.common.download_weights --cutout  (weights/u2net/u2net.onnx, or $U2NET_HOME,
 or rembg's own ~/.u2net). Without it, only images that already have a transparent background work.
 
 The operator-facing spec is INPUT_SPEC (shown next to the upload box and in the README).
@@ -92,7 +92,7 @@ def _session():
             path = cutout_model_path()
             if path is None:
                 raise Rejected("This picture has no transparent background, and the cut-out model is not "
-                               "installed on this laptop (run: python scripts/download_weights.py --cutout). "
+                               "installed on this laptop (run: python -m scripts.common.download_weights --cutout). "
                                "Use a PNG with a transparent background instead.")
             try:
                 import onnxruntime as ort

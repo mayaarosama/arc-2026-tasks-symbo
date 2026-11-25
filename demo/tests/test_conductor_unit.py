@@ -16,7 +16,9 @@ from PIL import Image, ImageDraw
 
 from arcdemo.conductor.app import create_app
 from arcdemo.conductor.config import DemoConfig
-from arcdemo.conductor.core import Conductor, _layout_summary, layout_prompt_text, layout_view
+from arcdemo.conductor.core import Conductor
+from arcdemo.conductor.tasks.i23d import add_upload
+from arcdemo.conductor.tasks.layout import layout_prompt_text, layout_summary, layout_view
 from tests.helpers import CONFIG, ROOT
 
 
@@ -99,13 +101,13 @@ def test_layout_view_and_prompt_text(offline_cfg):
 
 
 def test_layout_summary_counts_the_last_room_and_fixes():
-    assert _layout_summary(None) is None and _layout_summary([]) is None
+    assert layout_summary(None) is None and layout_summary([]) is None
     objs = [{"room": 0, "issues": ["x"]}, {"room": 1, "issues": []}, {"room": 1, "issues": ["y"]},
             {"room": 1, "removed": 3.0, "issues": []}]
-    assert _layout_summary(objs) == {"objects": 2, "flagged": 1}
+    assert layout_summary(objs) == {"objects": 2, "flagged": 1}
     objs[1]["history"] = [{"issues": ["z"]}]
     objs[1]["fixes"] = 1
-    assert _layout_summary(objs) == {"objects": 2, "flagged": 1, "first_flagged": 2, "fixes": 1}
+    assert layout_summary(objs) == {"objects": 2, "flagged": 1, "first_flagged": 2, "fixes": 1}
 
 
 # ------------------------------------------------------------------ conductor core
@@ -245,7 +247,7 @@ def test_live_round_needs_a_clean_prompt(cond, offline_cfg):
 
 
 def test_add_upload_offers_the_picture_and_survives_a_restart(cond, offline_cfg):
-    item = cond.add_upload("my photo!.png", png_bytes())
+    item = add_upload(cond, "my photo!.png", png_bytes())
     assert item["id"].startswith("up-") and item["tier"] == "upload" and item["label"] == "my photo"
     assert (offline_cfg.session_dir / item["upload"]).is_file()
     assert any(x["id"] == item["id"] for x in offline_cfg.inputs["i23d"])

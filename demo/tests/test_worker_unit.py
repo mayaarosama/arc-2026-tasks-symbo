@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from arcdemo.schemas import JobRequest
 from arcdemo.worker import app as W
+from arcdemo.worker import tasks
 from tests.helpers import CONFIG, mock_worker_cfg, wait_job
 
 
@@ -35,19 +36,19 @@ def test_load_worker_config_applies_overrides_and_catalogue(tmp_path):
      {"room_type", "max_objects", "streams", "max_tokens", "temperature", "seed", "repeat_until_budget",
       "repairs", "review_rounds", "layout_prompt"})])
 def test_request_settings_echo_per_task(job, keys):
-    assert set(W._request_settings(JobRequest(model="m", input_id="i", **job))) == keys
+    assert set(tasks.settings_echo(JobRequest(model="m", input_id="i", **job))) == keys
 
 
 def test_save_upload_guards(tmp_path):
     png = b"\x89PNG\r\n\x1a\n" + b"0" * 10
-    p = W.save_upload(base64.b64encode(png).decode(), tmp_path, "run_1-a")
+    p = tasks.save_upload(base64.b64encode(png).decode(), tmp_path, "run_1-a")
     assert p == tmp_path / "inputs" / "run_1-a.png" and p.read_bytes() == png
     with pytest.raises(ValueError, match="run_id"):
-        W.save_upload(base64.b64encode(png).decode(), tmp_path, "../evil")
+        tasks.save_upload(base64.b64encode(png).decode(), tmp_path, "../evil")
     with pytest.raises(ValueError, match="base64"):
-        W.save_upload("@@@", tmp_path, "r")
+        tasks.save_upload("@@@", tmp_path, "r")
     with pytest.raises(ValueError, match="PNG"):
-        W.save_upload(base64.b64encode(b"GIF89a").decode(), tmp_path, "r")
+        tasks.save_upload(base64.b64encode(b"GIF89a").decode(), tmp_path, "r")
 
 
 def test_model_manager_refuses_unknown_and_other_task_models(tmp_path):

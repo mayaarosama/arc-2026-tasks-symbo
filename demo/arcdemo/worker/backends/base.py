@@ -153,17 +153,23 @@ def resolve_dtype(spec: dict, cfg: dict, device: str):
 
 
 _BACKENDS: dict[str, str] = {
+    # Task 1 — text to image
     "diffusers_t2i": "arcdemo.worker.backends.diffusers_t2i:DiffusersT2I",
+    # Task 2 — image to 3D
     "trellis2": "arcdemo.worker.backends.trellis:Trellis2",
     "trellis1": "arcdemo.worker.backends.trellis:Trellis1",
     "sf3d": "arcdemo.worker.backends.sf3d:StableFast3D",
+    # Task 3 — music
     "stable_audio3": "arcdemo.worker.backends.stable_audio3:StableAudio3",
-    "music_stub": "arcdemo.worker.backends.music_stub:MusicStub",
+    # Task 4 — language model race
     "llama_server": "arcdemo.worker.backends.llm:LlamaServer",
-    "llm_mock": "arcdemo.worker.backends.llm:LlmMock",
+    # Task 8 — scene construction
     "llama_layout": "arcdemo.worker.backends.layout:LayoutServer",
+    # mock workers (worker config mock: true; arcdemo/worker/tasks.py MOCK_BACKEND picks one per task)
+    "mock": "arcdemo.worker.backends.mock:MockBackend",           # t2i and i23d
+    "music_stub": "arcdemo.worker.backends.music_stub:MusicStub",
+    "llm_mock": "arcdemo.worker.backends.llm:LlmMock",
     "layout_mock": "arcdemo.worker.backends.layout:LayoutMock",
-    "mock": "arcdemo.worker.backends.mock:MockBackend",   # t2i/i23d models when mock: true (music_stub, llm_mock)
 }
 
 

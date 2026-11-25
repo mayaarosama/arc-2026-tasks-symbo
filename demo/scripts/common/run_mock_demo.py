@@ -1,7 +1,7 @@
 """Laptop dry-run: three mock workers + the conductor, no GPU or weights needed.
 
-    python scripts/run_mock_demo.py            # then open http://127.0.0.1:8000/operator
-    python scripts/run_mock_demo.py --no-conductor   # workers only (tests, rehearse.py)
+    python -m scripts.common.run_mock_demo            # then open http://127.0.0.1:8000/operator
+    python -m scripts.common.run_mock_demo --no-conductor   # workers only (tests, rehearse.py)
 
 Failure drill: kill one worker (its PID is printed) mid-round and watch the cell go REPLAY.
 Logs: results-mock/<machine>/worker-*.log and session-mock/conductor.log
@@ -12,7 +12,7 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]       # demo/
 WORKERS = [("dgx", 9101), ("workstation", 9102), ("cpu", 9103)]
 
 

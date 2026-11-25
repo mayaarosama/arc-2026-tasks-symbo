@@ -13,7 +13,7 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 1            # demo/
 DEMO="$PWD"
-SECRETS="${SECRETS:-$DEMO/./config.txt}"
+SECRETS="${SECRETS:-$DEMO/config.txt}"
 CPU=1 STOP=0
 for a in "$@"; do
     case "$a" in
@@ -102,7 +102,7 @@ if [ ! -x .venv/bin/python ]; then
     "${PY:-python3.11}" -m venv .venv && .venv/bin/pip install -r requirements/conductor.txt || exit 1
 fi
 if [ ! -f weights/u2net/u2net.onnx ]; then   # uploaded pictures (image-to-3D) need it; the rest of the show does not
-    .venv/bin/python scripts/download_weights.py --cutout         || echo "WARNING: no cut-out model: uploads work only as PNGs with a transparent background"
+    .venv/bin/python -m scripts.common.download_weights --cutout         || echo "WARNING: no cut-out model: uploads work only as PNGs with a transparent background"
 fi
 CFG=config/demo-workstation.yaml
 if [ $CPU = 0 ]; then   # GPU only: drop the CPU machine so the page does not show it as down

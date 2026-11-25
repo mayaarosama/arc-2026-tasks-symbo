@@ -22,7 +22,11 @@ from dataclasses import asdict, dataclass
 
 import numpy as np
 import trimesh
-from scipy.spatial import cKDTree
+
+try:                                    # scoring runs in the conductor's env; the llm / t2i / music venvs
+    from scipy.spatial import cKDTree   # have no scipy, yet import the conductor's task modules (scripts)
+except ImportError:
+    cKDTree = None
 
 
 @dataclass

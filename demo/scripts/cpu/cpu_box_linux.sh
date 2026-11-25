@@ -106,21 +106,21 @@ setup() {
     run "$(vpy .venv-llm)" scripts/cpu/fetch_llama_cpp.py          # the pinned CPU release, third_party/llama.cpp/bin
 
     echo "== weights (HF_TOKEN from the secrets file)"
-    run "$(vpy .venv-t2i)" scripts/download_weights.py --machine cpu --task t2i
-    run "$(vpy .venv-i23d)" scripts/download_weights.py --machine cpu --task i23d
-    run "$(vpy .venv-music)" scripts/download_weights.py --machine cpu --task music
-    run "$(vpy .venv-llm)" scripts/download_weights.py --machine cpu --task llm      # Qwen3.5 4B, one GGUF file
-    run "$(vpy .venv-llm)" scripts/download_weights.py --machine cpu --task layout   # the same file: already there
+    run "$(vpy .venv-t2i)" -m scripts.common.download_weights --machine cpu --task t2i
+    run "$(vpy .venv-i23d)" -m scripts.common.download_weights --machine cpu --task i23d
+    run "$(vpy .venv-music)" -m scripts.common.download_weights --machine cpu --task music
+    run "$(vpy .venv-llm)" -m scripts.common.download_weights --machine cpu --task llm      # Qwen3.5 4B, one GGUF file
+    run "$(vpy .venv-llm)" -m scripts.common.download_weights --machine cpu --task layout   # the same file: already there
 
     echo "== this machine"
     run "$(vpy .venv-t2i)" scripts/cpu/check_cpu.py
     echo "== offline check (network use is now forbidden; a FAIL here would fail on stage)"
     unset HF_TOKEN
-    run "$(vpy .venv-t2i)" scripts/verify_offline.py --config "$WORKER_CONFIG" --task t2i
-    PYTHONPATH="$SF3D_DIR" run "$(vpy .venv-i23d)" scripts/verify_offline.py --config "$WORKER_CONFIG" --task i23d
-    run "$(vpy .venv-music)" scripts/verify_offline.py --config "$WORKER_CONFIG" --task music
-    run "$(vpy .venv-llm)" scripts/verify_offline.py --config "$WORKER_CONFIG" --task llm
-    run "$(vpy .venv-llm)" scripts/verify_offline.py --config "$WORKER_CONFIG" --task layout
+    run "$(vpy .venv-t2i)" -m scripts.common.verify_offline --config "$WORKER_CONFIG" --task t2i
+    PYTHONPATH="$SF3D_DIR" run "$(vpy .venv-i23d)" -m scripts.common.verify_offline --config "$WORKER_CONFIG" --task i23d
+    run "$(vpy .venv-music)" -m scripts.common.verify_offline --config "$WORKER_CONFIG" --task music
+    run "$(vpy .venv-llm)" -m scripts.common.verify_offline --config "$WORKER_CONFIG" --task llm
+    run "$(vpy .venv-llm)" -m scripts.common.verify_offline --config "$WORKER_CONFIG" --task layout
     echo "setup done. Firewall, if active:  sudo ufw allow 8101:8105/tcp"
 }
 
@@ -130,8 +130,8 @@ conductor() {   # set up the conductor on this machine: its venv and the cut-out
     [ -d .venv ] || run "$PYTHON" -m venv .venv
     run "$(vpy .venv)" -m pip install -q --upgrade pip
     run "$(vpy .venv)" -m pip install -q -r requirements/conductor.txt
-    run "$(vpy .venv)" scripts/download_weights.py --cutout          # U2-Net, 176 MB -> weights/u2net/
-    run "$(vpy .venv)" scripts/verify_offline.py --cutout            # runs on the CPU; on a GPU with onnxruntime-gpu
+    run "$(vpy .venv)" -m scripts.common.download_weights --cutout          # U2-Net, 176 MB -> weights/u2net/
+    run "$(vpy .venv)" -m scripts.common.verify_offline --cutout            # runs on the CPU; on a GPU with onnxruntime-gpu
     echo "conductor ready:  $(vpy .venv) -m arcdemo.conductor --config config/demo.yaml"
 }
 

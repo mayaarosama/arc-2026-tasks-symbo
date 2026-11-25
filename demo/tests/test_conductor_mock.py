@@ -10,6 +10,7 @@ import pytest
 
 from arcdemo.conductor.config import DemoConfig
 from arcdemo.conductor.core import Conductor
+from arcdemo.conductor.tasks.i23d import add_upload
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -440,7 +441,7 @@ def test_uploaded_picture_runs_live_and_every_machine_gets_the_same_file(stack, 
     async def go():
         cond = Conductor(cfg)
         await cond.refresh_health()
-        item = cond.add_upload("my mug.png", buf.getvalue())
+        item = add_upload(cond, "my mug.png", buf.getvalue())
         rnd = await cond.start_round("seg3", item["id"])
         await cond.wait_round(60)
         again = Conductor(cfg)                                # a restart still offers the upload

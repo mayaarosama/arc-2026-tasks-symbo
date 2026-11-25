@@ -4,7 +4,7 @@ Keyed on task / protocol / machine / input_id, with a hash of the settings store
 so a record made under different settings is flagged as stale rather than silently reused.
 Layout:  replay/<task>/<protocol>/<machine>/<input_id>/record.json  (+ output files)
          replay/<task>/<protocol>/<machine>/<input_id>/full/record.json   run to completion, no
-         time limit (scripts/rehearse.py --full): what a slow machine shows when its time is up
+         time limit (scripts/common/rehearse.py --full): what a slow machine shows when its time is up
 """
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
 """Acceptance check: every model this worker will run loads and generates with networking OFF.
 
-    python scripts/verify_offline.py --config config/worker-workstation.yaml --task t2i
+    python -m scripts.common.verify_offline --config config/worker-workstation.yaml --task t2i
 
 Runs through the real worker code path (load -> job -> output), in-process, with
 HF_HUB_OFFLINE=1. Any model that tries to reach the network fails here, not on stage.
@@ -8,20 +8,20 @@ Run after download_weights.py, and again after any pip change. Writes a line per
 <results_dir>/verify-<task>.log.
 """
 import argparse
+import io
 import os
 import sys
 import time
 from pathlib import Path
 
-os.environ["HF_HUB_OFFLINE"] = "1"
-os.environ["TRANSFORMERS_OFFLINE"] = "1"
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import numpy as np
+from PIL import Image
+from fastapi.testclient import TestClient
 
-from fastapi.testclient import TestClient                          # noqa: E402
-
-from arcdemo.conductor.config import DemoConfig                    # noqa: E402
-from arcdemo.logs import setup_logging                             # noqa: E402
-from arcdemo.worker.app import ROOT, create_app, load_worker_config  # noqa: E402
+from arcdemo import imageprep
+from arcdemo.conductor.config import DemoConfig
+from arcdemo.logs import setup_logging
+from arcdemo.worker.app import ROOT, create_app, load_worker_config
 
 TINY = {"t2i": {"prompt": "a red cube on a table", "width": 512, "height": 512, "steps": 2, "batch": 1},
         "i23d": {"image_path": "data/i23d/inputs/i23d-01.png"},
@@ -35,15 +35,9 @@ def verify_cutout() -> int:
     """The conductor's background removal for uploaded pictures (arcdemo/imageprep.py): the model is on
     disk, onnxruntime loads it, and it finds a known object's outline in a stage picture put on a
     plain background and saved as JPEG (no network involved at any point)."""
-    import io
-
-    import numpy as np
-    from PIL import Image
-
-    from arcdemo import imageprep
     path = imageprep.cutout_model_path()
     if path is None:
-        print("FAIL  cutout                 model not found (python scripts/download_weights.py --cutout)")
+        print("FAIL  cutout                 model not found (python -m scripts.common.download_weights --cutout)")
         return 1
     try:
         src = Image.open(ROOT / "data/i23d/inputs/i23d-03.png").convert("RGBA").resize((1024, 1024))
@@ -67,6 +61,8 @@ def verify_cutout() -> int:
 
 
 def main() -> int:
+    os.environ["HF_HUB_OFFLINE"] = "1"          # before any model library is imported: nothing may
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"    # touch the network (the backends import them lazily)
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", help="worker config, e.g. config/worker-dgx.yaml")
     ap.add_argument("--task")

@@ -29,7 +29,7 @@ def _open_rgba(path: str) -> Image.Image:
     img = Image.open(path)
     if img.mode != "RGBA":
         raise ValueError(f"{path}: expected an RGBA render with alpha (got {img.mode}); "
-                         "re-run scripts/prepare_gso.py")
+                         "re-run scripts/i23d/prepare_gso.py")
     return img
 
 

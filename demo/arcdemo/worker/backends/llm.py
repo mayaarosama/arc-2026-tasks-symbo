@@ -33,12 +33,11 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Iterator, Optional
 
+from ...prompts import llm_system
 from ...schemas import JobRequest
 from .base import Backend, JobContext
 
 log = logging.getLogger("arcdemo.worker")
-SYSTEM = ("You are a helpful assistant at a public technology demo. "
-          "Answer clearly, in plain English, without tables.")
 
 
 class LlmBackend(Backend):
@@ -283,7 +282,7 @@ class LlamaServer(LlmBackend):
         return _ServerMemory(self)
 
     def _stream(self, req: JobRequest, seed: int) -> Iterator[tuple[str, int]]:
-        messages = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": req.prompt or ""}]
+        messages = [{"role": "system", "content": llm_system()}, {"role": "user", "content": req.prompt or ""}]
         yield from self._chat(messages, req.max_tokens, req.temperature, seed)
 
     def _chat(self, messages: list[dict], max_tokens: int, temperature: float, seed: int,
