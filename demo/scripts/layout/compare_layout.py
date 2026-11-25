@@ -17,6 +17,11 @@ from arcdemo.layout_prompt import (EXAMPLES, WALL_PIECES, footprint, parse_line,
                                    similar_rooms, walls)
 
 
+# The review's own measures (what the Task 8 review doc reports), in metres.
+AGAINST_WALL = 0.05      # a wall piece's back within this of a straight wall counts as against it
+COPIED = 0.20            # an object this close to a shown example's same object counts as copied
+SIZE_OFF = 0.10          # a LayoutGPT size this far from the catalogue size counts as different
+
 def against_wall(o: dict, spec: dict) -> bool:
     x0, y0, x1, y1 = footprint(o)
     for w in walls(spec["floor_plan"]).values():
@@ -25,11 +30,11 @@ def against_wall(o: dict, spec: dict) -> bool:
         a, b = w["span"]
         if w["axis"] == "x":
             back = y0 if w["sign"] > 0 else y1
-            if abs(back - w["fixed"]) <= 0.05 and a - 0.05 <= x0 and x1 <= b + 0.05:
+            if abs(back - w["fixed"]) <= AGAINST_WALL and a - AGAINST_WALL <= x0 and x1 <= b + AGAINST_WALL:
                 return True
         else:
             back = x0 if w["sign"] > 0 else x1
-            if abs(back - w["fixed"]) <= 0.05 and a - 0.05 <= y0 and y1 <= b + 0.05:
+            if abs(back - w["fixed"]) <= AGAINST_WALL and a - AGAINST_WALL <= y0 and y1 <= b + AGAINST_WALL:
                 return True
     return False
 
@@ -60,11 +65,11 @@ def analyse(folder: Path) -> tuple[str, list[dict]]:
         spec, objs = rec["room"], [o for o in rec["objects"] if o.get("removed") is None]
         wall = [o for o in objs if o["cls"] in WALL_PIECES]
         shown = shown_examples(spec, style)
-        copied = sum(1 for o in objs if any(e["cls"] == o["cls"] and abs(e["x"] - o["x"]) <= 0.2
-                                            and abs(e["y"] - o["y"]) <= 0.2 for e in shown))
+        copied = sum(1 for o in objs if any(e["cls"] == o["cls"] and abs(e["x"] - o["x"]) <= COPIED
+                                            and abs(e["y"] - o["y"]) <= COPIED for e in shown))
         flags = [i for o in objs for i in o.get("issues", [])]
         sized = [o for o in objs if "written_size" in o]
-        size_off = sum(1 for o in sized if any(abs(a - b) > 0.1 for a, b in zip(o["written_size"], (o["w"], o["d"], o["h"]))))
+        size_off = sum(1 for o in sized if any(abs(a - b) > SIZE_OFF for a, b in zip(o["written_size"], (o["w"], o["d"], o["h"]))))
         rows.append({"room": f.stem, "objects": len(objs), "flagged": sum(1 for o in objs if o.get("issues")),
                      "outside": flags.count("outside"), "overlap": flags.count("overlap"), "door": flags.count("door"),
                      "wall": f"{sum(against_wall(o, spec) for o in wall)} of {len(wall)}", "copied": copied,
