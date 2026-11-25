@@ -11,7 +11,7 @@ const Demo = {
 
   onState(fn) { this.listeners.push(fn); },
 
-  async poll(intervalMs = 300) {
+  async poll(intervalMs) {           // from /api/config ui.poll_ms (config/defaults.yaml stage)
     for (;;) {
       try {
         const r = await fetch("/api/state", { cache: "no-store" });

@@ -1,0 +1,11 @@
+{
+ "_about": "Task 2: what an operator's own picture must be like, shown next to the upload box (GET /api/i23d/spec). $-placeholders come from config/defaults.yaml i23d.upload (string.Template).",
+ "rules": [
+  ["File", "PNG, JPEG or WebP, up to $max_mb MB. Shortest side $good_side px or more ($min_side px is the minimum)."],
+  ["Content", "One object, whole and not cropped: nothing touching the edge of the picture."],
+  ["Background", "Plain and in a different colour from the object. A PNG with a transparent background is best."],
+  ["View", "Three-quarter view from slightly above (about 20° up, 35° round), like the stage examples."],
+  ["Light", "Even and soft. No hard shadows, glare or strong reflections: they get painted into the texture."],
+  ["Avoid", "Glass and see-through objects, mirrors, thin wires or hair, text-heavy surfaces, people, and scenes with several objects."]
+ ]
+}

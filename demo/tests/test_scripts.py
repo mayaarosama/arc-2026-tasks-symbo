@@ -12,9 +12,12 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import yaml
+from pydantic import ValidationError
 
 from arcdemo.conductor.config import DemoConfig
 from arcdemo.layout_prompt import parse_line
+from scripts.common.settings import Scripts, read_env
 from tests.helpers import ROOT
 
 SCRIPTS = ROOT / "scripts"
@@ -168,9 +171,27 @@ def test_check_cpu_reports_without_failing():
 
 def test_fetch_llama_cpp_pins_the_same_release_as_the_gpu_setup():
     fl = load("fetch_llama_cpp.py")
-    setup = find("setup_gpu_machine.sh").read_text(encoding="utf-8")
-    assert f"LLAMA_TAG={fl.TAG}" in setup.replace('"', "").replace("'", "") or fl.TAG in setup
+    assert fl.TAG == read_env()["LLAMA_TAG"]
+    for name in ("setup_gpu_machine.sh", "start_workstation_show.sh", "cpu_box_linux.sh"):
+        assert 'config/versions.env"' in find(name).read_text(encoding="utf-8"), f"{name} does not source versions.env"
+    assert "config\\versions.env" in find("cpu_box_windows.ps1").read_text(encoding="utf-8")
     assert all(size > 0 and fl.TAG in fname for fname, size in fl.ASSETS.values())
+
+
+def test_versions_env_defines_every_variable_the_shell_scripts_use():
+    keys = set(read_env())
+    for name in ("setup_gpu_machine.sh", "start_workstation_show.sh", "cpu_box_linux.sh"):
+        text = find(name).read_text(encoding="utf-8")
+        used = set(re.findall(r"\$\{?((?:TORCH|LLAMA|SF3D|SA3|CUDA|SETUPTOOLS|CONDUCTOR|WORKER|CPU_WORKER)_[A-Z_]+)", text))
+        used -= set(re.findall(r"\b([A-Z_][A-Z0-9_]*)=", text))         # the script's own variables
+        assert used <= keys, f"{name} uses {sorted(used - keys)}, not in config/versions.env"
+
+
+def test_scripts_yaml_rejects_a_typo(tmp_path):
+    raw = yaml.safe_load((ROOT / "config/scripts.yaml").read_text(encoding="utf-8"))
+    raw["rehearse"]["max_wait_secs"] = 5
+    with pytest.raises(ValidationError, match="max_wait_secs"):
+        Scripts.model_validate(raw)
 
 
 def test_plan_downloads_helpers():

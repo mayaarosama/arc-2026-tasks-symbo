@@ -23,9 +23,11 @@ WORKER_CONFIG="${WORKER_CONFIG:-config/worker-cpu.yaml}"
 PYTHON="${PYTHON:-python3.11}"
 SF3D_DIR="$DEMO/third_party/stable-fast-3d"
 SA3_DIR="$DEMO/third_party/stable-audio-3"
-SA3_TORCH="2.7.1"                 # stable-audio-3 pins torch + torchaudio to this version
-TORCH_INDEX="https://download.pytorch.org/whl/cpu"
-PORTS=(t2i:8101 i23d:8102 music:8103 llm:8104 layout:8105)
+# shellcheck source=../../config/versions.env
+. "$DEMO/config/versions.env"     # pinned versions, sources and ports (one file for every machine script)
+SA3_TORCH="$TORCH_VERSION"        # stable-audio-3 pins torch + torchaudio to this version
+TORCH_INDEX="$TORCH_INDEX_CPU"
+read -r -a PORTS <<< "${WORKER_PORTS//,/ }"   # t2i:8101 i23d:8102 ...
 cd "$DEMO"
 mkdir -p results
 
@@ -83,9 +85,9 @@ setup() {
 
     echo "== image-to-3D env (.venv-i23d): Stable Fast 3D"
     make_venv .venv-i23d
-    [ -d "$SF3D_DIR" ] || run git clone https://github.com/Stability-AI/stable-fast-3d "$SF3D_DIR"
+    [ -d "$SF3D_DIR" ] || run git clone "$SF3D_REPO" "$SF3D_DIR"
     echo "stable-fast-3d commit: $(git -C "$SF3D_DIR" rev-parse HEAD)"
-    run "$(vpy .venv-i23d)" -m pip install -q -U setuptools==69.5.1 wheel
+    run "$(vpy .venv-i23d)" -m pip install -q -U "setuptools==$SETUPTOOLS_VERSION" wheel
     # SF3D's requirements.txt installs ./texture_baker and ./uv_unwrapper by relative path
     (cd "$SF3D_DIR" && run "$(vpy "$DEMO/.venv-i23d")" -m pip install -q -r requirements.txt)
     run "$(vpy .venv-i23d)" -m pip install -q -r requirements/worker-base.txt
@@ -94,7 +96,7 @@ setup() {
 
     echo "== music env (.venv-music): Stable Audio 3.0 Small"
     make_venv .venv-music "torch==$SA3_TORCH" "torchaudio==$SA3_TORCH"
-    [ -d "$SA3_DIR" ] || run git clone https://github.com/Stability-AI/stable-audio-3 "$SA3_DIR"
+    [ -d "$SA3_DIR" ] || run git clone "$SA3_REPO" "$SA3_DIR"
     echo "stable-audio-3 commit: $(git -C "$SA3_DIR" rev-parse HEAD)"
     run "$(vpy .venv-music)" -m pip install -q -r requirements/music.txt
     run "$(vpy .venv-music)" -m pip install -q --no-deps -e "$SA3_DIR"
@@ -103,7 +105,7 @@ setup() {
     [ -d .venv-llm ] || run "$PYTHON" -m venv .venv-llm
     run "$(vpy .venv-llm)" -m pip install -q --upgrade pip
     run "$(vpy .venv-llm)" -m pip install -q -r requirements/llm.txt
-    run "$(vpy .venv-llm)" scripts/cpu/fetch_llama_cpp.py          # the pinned CPU release, third_party/llama.cpp/bin
+    run "$(vpy .venv-llm)" -m scripts.cpu.fetch_llama_cpp          # the pinned CPU release, third_party/llama.cpp/bin
 
     echo "== weights (HF_TOKEN from the secrets file)"
     run "$(vpy .venv-t2i)" -m scripts.common.download_weights --machine cpu --task t2i
@@ -113,7 +115,7 @@ setup() {
     run "$(vpy .venv-llm)" -m scripts.common.download_weights --machine cpu --task layout   # the same file: already there
 
     echo "== this machine"
-    run "$(vpy .venv-t2i)" scripts/cpu/check_cpu.py
+    run "$(vpy .venv-t2i)" -m scripts.cpu.check_cpu
     echo "== offline check (network use is now forbidden; a FAIL here would fail on stage)"
     unset HF_TOKEN
     run "$(vpy .venv-t2i)" -m scripts.common.verify_offline --config "$WORKER_CONFIG" --task t2i

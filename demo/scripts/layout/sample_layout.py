@@ -27,8 +27,10 @@ from fastapi.testclient import TestClient
 
 from arcdemo.conductor.config import DemoConfig
 from arcdemo.conductor.tasks.layout import layout_prompt_text
+from arcdemo.defaults import DEFAULTS
 from arcdemo.logs import setup_logging
 from arcdemo.worker.app import ROOT, create_app, load_worker_config
+from scripts.common.settings import SCRIPTS
 
 TERMINAL = ("ok", "budget_exceeded", "out_of_memory", "error", "cancelled")
 
@@ -36,10 +38,11 @@ TERMINAL = ("ok", "budget_exceeded", "out_of_memory", "error", "cancelled")
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True, help="worker config, e.g. config/worker-workstation.yaml")
-    ap.add_argument("--demo", default="config/demo.yaml", help="where the settings and rooms come from")
+    ap.add_argument("--demo", default=DEFAULTS.conductor.config, help="where the settings and rooms come from")
     ap.add_argument("--protocol", default="iso_quality")
     ap.add_argument("--rooms", help="comma list of input ids (default: all)")
-    ap.add_argument("--out", help="output folder (default: results-local/layout-review-<machine>-<time>)")
+    ap.add_argument("--out", help="output folder (default: <sample_layout.out_dir in config/scripts.yaml>/"
+                                  "layout-review-<machine>-<time>)")
     a = ap.parse_args()
     if "huggingface_hub" in sys.modules:   # read HF_HUB_OFFLINE at its import: offline would not be enforced
         sys.exit("huggingface_hub was imported before HF_HUB_OFFLINE was set: offline mode is not enforced")
@@ -55,7 +58,7 @@ def main() -> int:
         want = [r.strip() for r in a.rooms.split(",")]
         rooms = [r for r in rooms if r["id"] in want]
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    out = Path(a.out) if a.out else ROOT / "results-local" / f"layout-review-{cfg['machine']}-{stamp}"
+    out = Path(a.out) if a.out else ROOT / SCRIPTS.sample_layout.out_dir / f"layout-review-{cfg['machine']}-{stamp}"
     (out / "rooms").mkdir(parents=True, exist_ok=True)
     cfg["results_dir"] = str(out)               # outputs and the llama-server log land here too
     setup_logging(out / "worker.log")

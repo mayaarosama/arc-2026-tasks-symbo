@@ -6,6 +6,7 @@ from pathlib import Path
 
 import uvicorn
 
+from ..defaults import DEFAULTS
 from ..logs import setup_logging
 from .app import ROOT, create_app, load_worker_config
 
@@ -14,8 +15,8 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--config", required=True)
     p.add_argument("--task", required=True, help="t2i | i23d | music | llm | layout, or a comma list (mock workers)")
-    p.add_argument("--host", default="0.0.0.0")
-    p.add_argument("--port", type=int, default=8101)
+    p.add_argument("--host", default=DEFAULTS.worker.host)
+    p.add_argument("--port", type=int, default=DEFAULTS.worker.port)
     a = p.parse_args()
     cfg_path = str(Path(a.config).resolve())
     os.chdir(ROOT)  # input paths in job requests are relative to demo/

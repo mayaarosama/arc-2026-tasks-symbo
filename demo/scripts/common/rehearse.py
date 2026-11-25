@@ -28,7 +28,9 @@ from pathlib import Path
 
 from arcdemo.conductor.config import DemoConfig
 from arcdemo.conductor.core import Conductor
+from arcdemo.defaults import DEFAULTS
 from arcdemo.logs import setup_logging
+from scripts.common.settings import SCRIPTS
 
 log = logging.getLogger("arcdemo.rehearse")
 SAVEABLE = {"ok", "budget_exceeded", "out_of_memory"}
@@ -95,10 +97,11 @@ async def rehearse(cfg: DemoConfig, segments: list[str], repeat: int, max_wait: 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", default="config/demo.yaml")
+    ap.add_argument("--config", default=DEFAULTS.conductor.config)
     ap.add_argument("--segments", required=True, help="comma list of segment ids")
     ap.add_argument("--repeat", type=int, default=3)
-    ap.add_argument("--max-wait", type=float, default=600, help="seconds per round before stopping it")
+    ap.add_argument("--max-wait", type=float, default=SCRIPTS.rehearse.max_wait_seconds,
+                    help="seconds per round before stopping it")
     ap.add_argument("--no-save", action="store_true", help="measure only, do not touch the replay table")
     ap.add_argument("--full", action="store_true",
                     help="run to completion with no time limit and save to the full/ recording")

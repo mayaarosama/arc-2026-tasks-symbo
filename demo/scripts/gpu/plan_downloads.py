@@ -21,15 +21,16 @@ import shutil
 import sys
 from pathlib import Path
 
-from arcdemo.conductor.config import DemoConfig   # importing arcdemo first sets HF_HUB_CACHE
+from arcdemo.conductor.config import DemoConfig  # importing arcdemo first sets HF_HUB_CACHE
 from scripts.common import download_weights as dw
+from scripts.common.settings import SCRIPTS
 
 DEMO = Path(__file__).resolve().parents[2]
 
-# GPU memory a model needs, GB. Task 2 spec figures (third-party, unverified): measure and update.
-VRAM_GB = {"trellis2-4b": 24, "trellis-image-large": 16, "sf3d": 6}
-GGUF_OVERHEAD_GB = 1.5                        # llama.cpp compute buffers + a small KV cache
-VRAM_SLACK_GB = 0.5                           # nvidia-smi's GiB vs the nominal GB of the figures
+# GPU memory a model needs, GB, and the margins: config/scripts.yaml plan_downloads.
+VRAM_GB = SCRIPTS.plan_downloads.vram_gb
+GGUF_OVERHEAD_GB = SCRIPTS.plan_downloads.gguf_overhead_gb
+VRAM_SLACK_GB = SCRIPTS.plan_downloads.vram_slack_gb
 GB = 1e9
 
 
@@ -39,7 +40,7 @@ def gb(n: float) -> str:
 
 def remote_files(api, repo: str, ignore, allow) -> tuple[list[tuple[str, int]], str]:
     """(filename, size) of every file the download would fetch, and the commit."""
-    from huggingface_hub.utils import filter_repo_objects   # deferred: see main()
+    from huggingface_hub.utils import filter_repo_objects  # deferred: see main()
     info = api.model_info(repo, files_metadata=True)
     sizes = {s.rfilename: s.size or 0 for s in info.siblings}
     names = filter_repo_objects(list(sizes), allow_patterns=allow, ignore_patterns=ignore)
@@ -47,7 +48,7 @@ def remote_files(api, repo: str, ignore, allow) -> tuple[list[tuple[str, int]], 
 
 
 def missing_bytes(repo: str, files: list[tuple[str, int]], sha: str) -> int:
-    from huggingface_hub import try_to_load_from_cache      # deferred: see main()
+    from huggingface_hub import try_to_load_from_cache  # deferred: see main()
     return sum(size for name, size in files
                if not isinstance(try_to_load_from_cache(repo, name, revision=sha), str))
 

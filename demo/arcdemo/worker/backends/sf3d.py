@@ -26,7 +26,8 @@ try:                     # the i23d venv only: the worker imports this module wh
 except ImportError:
     torch = None
 
-from ...imageprep import resize_foreground   # shared with the conductor's upload step
+from ...defaults import DEFAULTS
+from ...imageprep import resize_foreground  # shared with the conductor's upload step
 from ...schemas import JobRequest
 from ..metrics import cuda_sync
 from .base import Backend, JobContext
@@ -58,7 +59,7 @@ class StableFast3D(Backend):
 
     def describe(self, req: JobRequest) -> dict:
         dev = self.devices[0]
-        return {"texture_size": req.texture_size or 1024,
+        return {"texture_size": req.texture_size or DEFAULTS.i23d.sf3d.texture_size,
                 "remesh": "none",
                 "precision": "bf16 autocast" if dev.startswith("cuda") else "fp32"}
 

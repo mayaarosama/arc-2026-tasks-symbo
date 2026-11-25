@@ -31,10 +31,11 @@ fetch("/api/config").then((r) => r.json()).then((c) => {
     s.style.setProperty("--c", m.color);
     box.appendChild(s);
   }
+  Demo.poll(c.ui.poll_ms);          // the stage settings come with the config (config/defaults.yaml stage)
 });
 
 function showView(name) {
-  for (const v of ["title", "round", "summary", "blank"]) {
+  for (const v of cfg.ui.views) {
     document.getElementById("v-" + v).hidden = v !== name;
   }
 }
@@ -455,5 +456,4 @@ Demo.onState((s) => {
     renderSummary(s.history);
   }
 });
-Demo.poll(300);
 requestAnimationFrame(tick);

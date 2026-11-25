@@ -2,7 +2,8 @@
 
     python -m arcdemo.worker --config config/worker-dgx.yaml --task t2i --port 8101
 
-Endpoints (all require X-Demo-Token when ARC_DEMO_TOKEN is set):
+Endpoints (all require X-Demo-Token when the token variable is set: worker config token_env, else
+config/defaults.yaml conductor.token_env, ARC_DEMO_TOKEN — the same variable the conductor reads):
   GET  /health                 machine, loaded models, busy flag, env hash
   GET  /env                    library versions (the conductor flags mismatches between machines)
   POST /load   {model}         load a model in the background (errors: /env last_error + log)
@@ -36,6 +37,7 @@ try:                     # optional: the llm venv has no torch (llama-server doe
 except ImportError:
     torch = None
 
+from ..defaults import DEFAULTS
 from ..layout_prompt import DEFAULT_CATALOG, load_catalog
 from ..schemas import TERMINAL, HealthInfo, JobRequest, JobResult, LoadRequest
 from ..weights import on_disk
@@ -45,6 +47,7 @@ from .metrics import Clock
 
 ROOT = Path(__file__).resolve().parents[2]          # demo/
 log = logging.getLogger("arcdemo.worker")
+D = DEFAULTS.worker                     # limits and intervals: config/defaults.yaml
 
 
 def load_worker_config(path: str, tasks: list[str]) -> dict:
@@ -56,7 +59,7 @@ def load_worker_config(path: str, tasks: list[str]) -> dict:
     cfg["tasks"] = tasks
     if "layout" in tasks:     # the furniture catalogue the prompt, grammar and room checks use
         cfg["layout_catalog_sha"] = load_catalog(cfg.get("layout_catalog", DEFAULT_CATALOG))["sha"]
-    cfg["results_dir"] = str((ROOT / cfg.get("results_dir", "results")).resolve())
+    cfg["results_dir"] = str((ROOT / cfg.get("results_dir", D.results_dir)).resolve())
     Path(cfg["results_dir"]).mkdir(parents=True, exist_ok=True)
     return cfg
 
@@ -154,7 +157,7 @@ class JobRunner:
                                input_id=req.input_id, protocol=req.protocol, requested=requested)
             job = Job(req, result)
             self.jobs[req.run_id] = job
-            while len(self.jobs) > 100:
+            while len(self.jobs) > D.job_history:
                 self.jobs.popitem(last=False)
             self.active = job
         log.info("[%s] submit %s model=%s input=%s budget=%s", req.run_id[:6], req.task, req.model,
@@ -179,7 +182,7 @@ class JobRunner:
             t = time.perf_counter()
             backend = self.models.ensure(req.model)
             r.load_seconds = round(time.perf_counter() - t, 3)
-            if r.load_seconds > 0.5:
+            if r.load_seconds > D.preload_warning_seconds:
                 r.message = "model was not preloaded: load time excluded from the clock but logged"
             r.settings = {**tasks.settings_echo(req), **backend.describe(req)}
             out_dir = Path(self.cfg["results_dir"])
@@ -244,14 +247,14 @@ def memory_report() -> dict:
 
 def _short(e: BaseException) -> str:
     s = f"{type(e).__name__}: {e}"
-    return s if len(s) < 400 else s[:400] + "…"
+    return s if len(s) < D.error_text_chars else s[:D.error_text_chars] + "…"
 
 
 def env_report(cfg: dict) -> dict:
     dists = sorted({f"{d.metadata['Name'].lower()}=={d.version}" for d in md.distributions()
                     if d.metadata["Name"]})
     # Torch / CUDA wheels legitimately differ between the CPU box and the GPU machines.
-    comparable = [d for d in dists if not d.split("==")[0].startswith(("torch", "nvidia-", "triton"))]
+    comparable = [d for d in dists if not d.split("==")[0].startswith(tuple(D.env_hash_exclude))]
     info: dict = {"machine": cfg["machine"], "python": platform.python_version(),
                   "platform": platform.platform(), "packages": comparable,
                   "env_hash": hashlib.sha1("\n".join(comparable).encode()).hexdigest()[:12]}
@@ -263,7 +266,7 @@ def env_report(cfg: dict) -> dict:
         info["gpus"] = ([torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())]
                         if torch.cuda.is_available() else [])
         info["threads"] = torch.get_num_threads()
-    for pkg in ("diffusers", "transformers", "accelerate", "bitsandbytes"):
+    for pkg in D.env_report_packages:
         try:
             info[pkg] = md.version(pkg)
         except md.PackageNotFoundError:
@@ -274,7 +277,7 @@ def env_report(cfg: dict) -> dict:
 def create_app(cfg: dict) -> FastAPI:
     models = ModelManager(cfg)
     runner = JobRunner(cfg, models)
-    token = os.environ.get("ARC_DEMO_TOKEN")
+    token = os.environ.get(cfg.get("token_env") or DEFAULTS.conductor.token_env)   # the conductor's variable
     env_cache: dict = {}
 
     def auth(x_demo_token: Optional[str] = Header(default=None)) -> None:
@@ -313,8 +316,8 @@ def create_app(cfg: dict) -> FastAPI:
     disk = {"at": 0.0, "keys": []}
 
     def available() -> list[str]:
-        """Models of this worker's tasks whose weights are on disk (re-checked every 15 s)."""
-        if time.time() - disk["at"] > 15:
+        """Models of this worker's tasks whose weights are on disk (re-checked every worker.disk_recheck_seconds)."""
+        if time.time() - disk["at"] > D.disk_recheck_seconds:
             disk["keys"] = [k for k, spec in cfg["models"].items() if spec.get("task") in cfg["tasks"]
                             and (cfg.get("mock") or on_disk(spec, k))]
             disk["at"] = time.time()

@@ -19,16 +19,16 @@ from typing import Any
 from fastapi import HTTPException
 from pydantic import BaseModel
 
+from ...defaults import DEFAULTS
 from ...imageprep import INPUT_SPEC, MAX_BYTES, Rejected, cutout_model_path, prepare
 from ...scoring import score_files
 from ..config import ROOT
+from ..urls import MEDIA_SESSION
 from .base import TaskHandler
 
 log = logging.getLogger("arcdemo.conductor")
-MEDIA_SESSION = "/media"                 # where the web app serves session_dir (app.py mounts it)
-UPLOAD_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
-UPLOAD_LABEL_CHARS = 40
-UPLOAD_DIGEST_CHARS = 10
+UP = DEFAULTS.i23d.upload               # limits: config/defaults.yaml i23d.upload
+DIGEST_CHARS = 10                       # an upload's id: the first characters of its SHA-1
 
 
 class UploadBody(BaseModel):
@@ -54,14 +54,14 @@ def add_upload(cond, name: str, data: bytes) -> dict:
     """Check, cut out and normalise an operator's picture, and offer it as an image-to-3D input.
     Raises imageprep.Rejected with the reason. -> the input item + warnings"""
     prep = prepare(data)
-    digest = hashlib.sha1(data).hexdigest()[:UPLOAD_DIGEST_CHARS]
+    digest = hashlib.sha1(data).hexdigest()[:DIGEST_CHARS]
     folder = uploads_dir(cond)
     folder.mkdir(parents=True, exist_ok=True)
     (folder / f"{digest}.png").write_bytes(prep.png)
     suffix = Path(name).suffix.lower()
-    ext = suffix if suffix in UPLOAD_EXTENSIONS else ".bin"
+    ext = suffix if suffix in UP.extensions else ".bin"
     (folder / f"{digest}-original{ext}").write_bytes(data)
-    label = re.sub(r"[^\w .()-]+", " ", Path(name).stem).strip()[:UPLOAD_LABEL_CHARS] or "Uploaded picture"
+    label = re.sub(r"[^\w .()-]+", " ", Path(name).stem).strip()[:UP.label_chars] or "Uploaded picture"
     item = {"id": f"up-{digest}", "label": label, "tier": "upload",
             "exposes": "An operator's own picture: live only (no recording, no reference mesh)",
             "upload": f"uploads/{digest}.png", "input_url": f"{MEDIA_SESSION}/uploads/{digest}.png",

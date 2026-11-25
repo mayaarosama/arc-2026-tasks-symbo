@@ -1,0 +1,90 @@
+{
+ "_about": "Task 8 prompt v3.1: the two worked example rooms the model is shown before its own room. Our own rooms (not from a dataset), of room types not on stage, so the model cannot copy a stage answer. Each reply line is one object, as the model must write it. Checked by tests/test_layout.py: every line resolves, inside, no overlaps, door free.",
+ "examples": [
+  {
+   "room": {
+    "room_type": "study",
+    "floor_plan": [
+     [
+      0,
+      0
+     ],
+     [
+      4.4,
+      0
+     ],
+     [
+      4.4,
+      3.2
+     ],
+     [
+      0,
+      3.2
+     ]
+    ],
+    "door": [
+     4.4,
+     2.6
+    ],
+    "max_objects": 8
+   },
+   "reply": [
+    "desk wall=south at=1.20",
+    "chair x=1.20 y=0.85 facing=south",
+    "bookshelf wall=west at=2.00",
+    "bookshelf wall=west at=2.80",
+    "armchair x=2.40 y=2.60 facing=west",
+    "floor_lamp x=2.40 y=1.90 facing=south",
+    "cabinet wall=east at=1.00",
+    "plant x=0.30 y=0.90 facing=south"
+   ]
+  },
+  {
+   "room": {
+    "room_type": "dining_room",
+    "floor_plan": [
+     [
+      0,
+      0
+     ],
+     [
+      3,
+      0
+     ],
+     [
+      3,
+      1.8
+     ],
+     [
+      5.2,
+      1.8
+     ],
+     [
+      5.2,
+      4.6
+     ],
+     [
+      0,
+      4.6
+     ]
+    ],
+    "door": [
+     0,
+     1.0
+    ],
+    "max_objects": 9
+   },
+   "reply": [
+    "dining_table x=2.00 y=3.00 facing=north",
+    "dining_chair x=2.00 y=3.75 facing=south",
+    "dining_chair x=2.00 y=2.25 facing=north",
+    "cabinet wall=north at=4.00",
+    "dresser wall=east2 at=3.00",
+    "bookshelf wall=south1 at=1.80",
+    "side_table x=4.40 y=2.10 facing=north",
+    "floor_lamp x=4.80 y=4.20 facing=south",
+    "plant x=0.30 y=4.30 facing=south"
+   ]
+  }
+ ]
+}

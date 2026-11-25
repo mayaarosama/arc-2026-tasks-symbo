@@ -1,0 +1,68 @@
+# Inputs and tunables of the Python scripts in scripts/ (one section per script, in the scripts/ order).
+# Loaded and validated by scripts/common/settings.py: an unknown key or a wrong type stops the script
+# with the key's name. Versions, sources and ports shared with the shell scripts: config/versions.env.
+
+download_weights:                    # scripts/common/download_weights.py
+  fallbacks:                         # models not in the settings matrix that must still be on disk
+    cpu/t2i: [sd15]                  #   "<machine>/<task>": [models.yaml keys]
+  ignore:                            # files not to download, per repo (duplicate single-file checkpoints:
+    stabilityai/stable-diffusion-3.5-large: [sd3.5_large.safetensors, "text_encoders/*"]   # diffusers loads
+    stabilityai/stable-diffusion-3.5-large-turbo: [sd3.5_large_turbo.safetensors, "text_encoders/*"]   # the folders)
+    stabilityai/stable-diffusion-3.5-medium: [sd3.5_medium.safetensors, "text_encoders/*"]
+    stable-diffusion-v1-5/stable-diffusion-v1-5: ["*.ckpt", "v1-5-pruned*.safetensors", "*.bin", "*fp16*", "*non_ema*"]
+    facebook/dinov2-large: [pytorch_model.bin]                       # transformers loads model.safetensors
+    laion/CLIP-ViT-B-32-laion2B-s34B-b79K: [model.safetensors, pytorch_model.bin, open_clip_model.safetensors]  # open_clip reads open_clip_pytorch_model.bin
+  cutout_url: https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx
+  cutout_bytes: 175997641            # a download of any other size is refused
+  cutout_path: weights/u2net/u2net.onnx
+
+rehearse:                            # scripts/common/rehearse.py
+  max_wait_seconds: 600              # --max-wait default: per round, before stopping it
+
+run_mock_demo:                       # scripts/common/run_mock_demo.py (ports must match config/demo-mock.yaml)
+  workers: {dgx: 9101, workstation: 9102, cpu: 9103}
+  conductor_config: config/demo-mock.yaml
+
+verify_offline:                      # scripts/common/verify_offline.py: one tiny job per task
+  jobs:
+    t2i: {prompt: a red cube on a table, width: 512, height: 512, steps: 2, batch: 1}
+    i23d: {image_path: data/i23d/inputs/i23d-01.png}
+    music: {prompt: test, length_s: 5}
+    llm: {prompt: Say hello in five words., max_tokens: 16}
+    layout: {room_type: bedroom, floor_plan: [[0, 0], [3.8, 0], [3.8, 3.4], [0, 3.4]], door: [0.6, 0],
+             max_objects: 3, max_tokens: 120}
+  cutout_image: data/i23d/inputs/i23d-03.png     # --cutout: a stage picture put on a plain background
+  cutout_min_iou: 0.9                            # its outline must match the known one this well
+
+build_rehearsal_prompts:             # scripts/t2i/build_rehearsal_prompts.py (PartiPrompts selection)
+  challenges: [Quantity, "Writing & Symbols", Fine-grained Detail, Perspective, "Properties & Positioning", Complex]
+  per_challenge: 4
+  seed: 2026                         # which prompts are picked
+  first_prompt_seed: 5000            # image seeds: first_prompt_seed + i for prompt i
+  min_words: 4
+  max_words: 40
+  out: data/t2i/rehearsal_prompts.json
+
+prepare_gso:                         # scripts/i23d/prepare_gso.py
+  fuel_url: "https://fuel.gazebosim.org/1.0/GoogleResearch/models/{name}/1/{name}.zip"
+  download_timeout_seconds: 120
+  camera: {elevation: 20.0, azimuth: 35.0, fov: 35.0}   # one fixed view for every object, degrees
+  size: 512                          # the rendered input, px
+  supersample: 2
+
+sample_layout:                       # scripts/layout/sample_layout.py
+  out_dir: results-local             # default --out: <out_dir>/layout-review-<machine>-<time>
+
+plan_downloads:                      # scripts/gpu/plan_downloads.py
+  vram_gb: {trellis2-4b: 24, trellis-image-large: 16, sf3d: 6}   # Task 2 spec figures: measure and update
+  gguf_overhead_gb: 1.5              # llama.cpp compute buffers + a small KV cache
+  vram_slack_gb: 0.5                 # nvidia-smi's GiB vs the nominal GB of the figures
+
+check_cpu:                           # scripts/cpu/check_cpu.py
+  min_ram_gb: 15                     # below: SD 3.5 Medium (no T5, fp32, ~13 GB) will not fit; plan on SD 1.5
+  min_disk_gb: 40                    # below: the CPU box's model cache (~30 GB) may not fit
+
+fetch_llama_cpp:                     # scripts/cpu/fetch_llama_cpp.py (release: LLAMA_TAG in config/versions.env)
+  assets:                            # release file (with {tag}) and its size in bytes; a truncated download is refused
+    win: ["llama-{tag}-bin-win-cpu-x64.zip", 25009019]
+    linux: ["llama-{tag}-bin-ubuntu-x64.tar.gz", 23185237]

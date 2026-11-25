@@ -6,13 +6,15 @@ from typing import Any, Optional
 from fastapi import HTTPException
 from fastapi.staticfiles import StaticFiles
 
-from ...layout_prompt import (PROMPT_VERSION, _angled, _door_wall, _not_floor, css_grammar, grammar,
-                              layoutgpt_messages, messages, walls)
+from ...defaults import DEFAULTS
+from ...layout_prompt import (PROMPT_VERSION, _angled, _door_wall, _not_floor, css_grammar, grammar, layoutgpt_messages,
+                              messages, walls)
 from ..config import ROOT
+from ..urls import LAYOUT_ASSETS
 from .base import TaskHandler
 
-DEFAULT_MAX_OBJECTS = 10                 # a room without max_objects in its input or settings
-ASSETS_URL = "/layout-assets/"           # where the web app serves the catalogue's assets_dir
+DEFAULT_MAX_OBJECTS = DEFAULTS.layout.max_objects    # a room without max_objects in its input or settings
+ASSETS_URL = LAYOUT_ASSETS + "/"
 
 
 def layout_view(item: dict) -> dict:
@@ -82,7 +84,7 @@ class SceneLayout(TaskHandler):
 
     def routes(self, app, cfg, get_cond) -> None:
         if cfg.layout_catalog:   # the furniture models, from the catalogue's assets_dir
-            app.mount(ASSETS_URL.rstrip("/"), StaticFiles(directory=ROOT / cfg.layout_catalog["assets_dir"]),
+            app.mount(LAYOUT_ASSETS, StaticFiles(directory=ROOT / cfg.layout_catalog["assets_dir"]),
                       name="layout-assets")
 
         @app.get("/api/layout_catalog")

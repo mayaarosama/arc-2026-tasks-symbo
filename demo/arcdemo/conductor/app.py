@@ -17,9 +17,13 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from ..defaults import DEFAULTS
+from ..schemas import TERMINAL
 from .config import ROOT, DemoConfig
 from .core import Conductor
 from .tasks import HANDLERS, handler
+from .urls import MEDIA_INPUT, MEDIA_REPLAY, MEDIA_SESSION
+from .urls import STATIC as STATIC_URL
 
 STATIC = Path(__file__).parent / "static"
 # Windows can map .js to text/plain in the registry; browsers then refuse ES modules (layout3d.js).
@@ -64,17 +68,17 @@ def create_app(cfg: DemoConfig) -> FastAPI:
     app = FastAPI(title="arcdemo conductor", lifespan=lifespan)
     cfg.session_dir.mkdir(parents=True, exist_ok=True)
     cfg.replay_dir.mkdir(parents=True, exist_ok=True)
-    app.mount("/static", StaticFiles(directory=STATIC), name="static")
-    app.mount("/media", StaticFiles(directory=cfg.session_dir), name="media")
-    app.mount("/replay-media", StaticFiles(directory=cfg.replay_dir), name="replay")
-    app.mount("/media-input/data", StaticFiles(directory=ROOT / "data"), name="inputs")
+    app.mount(STATIC_URL, StaticFiles(directory=STATIC), name="static")
+    app.mount(MEDIA_SESSION, StaticFiles(directory=cfg.session_dir), name="media")
+    app.mount(MEDIA_REPLAY, StaticFiles(directory=cfg.replay_dir), name="replay")
+    app.mount(MEDIA_INPUT, StaticFiles(directory=ROOT / "data"), name="inputs")
 
     @app.middleware("http")
     async def revalidate_pages(request, call_next):
         """Pages and their scripts: the browser asks for the newest version each time (a 304 when
         unchanged), so a page opened before a git pull never runs an old operator.js."""
         resp = await call_next(request)
-        if request.url.path.startswith("/static/") or request.url.path in ("/operator", "/stage"):
+        if request.url.path.startswith(STATIC_URL + "/") or request.url.path in ("/operator", "/stage"):
             resp.headers["Cache-Control"] = "no-cache"
         return resp
 
@@ -92,7 +96,12 @@ def create_app(cfg: DemoConfig) -> FastAPI:
 
     @app.get("/api/config")
     def config() -> dict:
-        return cfg.public()
+        """The show (machines, segments, inputs, models) and the pages' own settings (config/defaults.yaml stage)."""
+        st = DEFAULTS.stage
+        ui = {"poll_ms": st.poll_ms, "operator_poll_ms": st.operator_poll_ms, "views": st.views,
+              "terminal": sorted(TERMINAL), "media_input": MEDIA_INPUT,
+              "spare_prompts": f"{MEDIA_INPUT}/{Path(st.spare_prompts).relative_to('data').as_posix()}"}
+        return {**cfg.public(), "ui": ui}
 
     @app.get("/api/state")
     def state() -> dict:
@@ -158,7 +167,7 @@ def create_app(cfg: DemoConfig) -> FastAPI:
 
     @app.post("/api/view")
     def view(body: ViewBody) -> dict:
-        if body.view not in ("title", "round", "summary", "blank"):
+        if body.view not in DEFAULTS.stage.views:
             raise HTTPException(400, "unknown view")
         cond.view = body.view
         return {"view": cond.view}

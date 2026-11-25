@@ -31,13 +31,17 @@ try:                     # requirements/gso.txt, installed separately (only this
 except ImportError:
     pyrender = None
 
+from scripts.common.settings import SCRIPTS
+
 ROOT = Path(__file__).resolve().parents[2]       # demo/
 DATA = ROOT / "data" / "i23d"
-FUEL = "https://fuel.gazebosim.org/1.0/GoogleResearch/models/{name}/1/{name}.zip"
+P = SCRIPTS.prepare_gso                        # config/scripts.yaml
+FUEL = P.fuel_url
 log = logging.getLogger("prepare_gso")
 
-# Fixed camera, identical for every object: 20 deg above the horizon, 35 deg around, 35 deg FOV.
-ELEVATION, AZIMUTH, FOV, SIZE, SUPERSAMPLE = 20.0, 35.0, 35.0, 512, 2
+# Fixed camera, identical for every object (degrees above the horizon, around, field of view).
+ELEVATION, AZIMUTH, FOV = P.camera.elevation, P.camera.azimuth, P.camera.fov
+SIZE, SUPERSAMPLE = P.size, P.supersample
 
 
 def fetch(name: str) -> Path:
@@ -46,7 +50,7 @@ def fetch(name: str) -> Path:
     if not zpath.exists():
         url = FUEL.format(name=name)
         log.info("downloading %s", url)
-        r = requests.get(url, timeout=120)
+        r = requests.get(url, timeout=P.download_timeout_seconds)
         r.raise_for_status()
         zpath.parent.mkdir(parents=True, exist_ok=True)
         zpath.write_bytes(r.content)

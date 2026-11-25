@@ -15,20 +15,18 @@ import time
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from arcdemo import imageprep
 from arcdemo.conductor.config import DemoConfig
+from arcdemo.defaults import DEFAULTS
 from arcdemo.logs import setup_logging
 from arcdemo.worker.app import ROOT, create_app, load_worker_config
+from scripts.common.settings import SCRIPTS
 
-TINY = {"t2i": {"prompt": "a red cube on a table", "width": 512, "height": 512, "steps": 2, "batch": 1},
-        "i23d": {"image_path": "data/i23d/inputs/i23d-01.png"},
-        "music": {"prompt": "test", "length_s": 5},
-        "llm": {"prompt": "Say hello in five words.", "max_tokens": 16},
-        "layout": {"room_type": "bedroom", "floor_plan": [[0, 0], [3.8, 0], [3.8, 3.4], [0, 3.4]],
-                   "door": [0.6, 0], "max_objects": 3, "max_tokens": 120}}
+V = SCRIPTS.verify_offline       # config/scripts.yaml
+TINY = V.jobs                    # one tiny job per task
 
 
 def verify_cutout() -> int:
@@ -40,7 +38,7 @@ def verify_cutout() -> int:
         print("FAIL  cutout                 model not found (python -m scripts.common.download_weights --cutout)")
         return 1
     try:
-        src = Image.open(ROOT / "data/i23d/inputs/i23d-03.png").convert("RGBA").resize((1024, 1024))
+        src = Image.open(ROOT / V.cutout_image).convert("RGBA").resize((1024, 1024))
         bg = Image.new("RGBA", src.size, (200, 200, 205, 255))
         bg.alpha_composite(src)
         buf = io.BytesIO()
@@ -54,7 +52,7 @@ def verify_cutout() -> int:
     except Exception as e:  # noqa: BLE001 — any failure is the answer
         print(f"FAIL  cutout                 {type(e).__name__}: {e}")
         return 1
-    ok = prep.cutout == "u2net" and iou > 0.9
+    ok = prep.cutout == "u2net" and iou > V.cutout_min_iou
     print(f"{'PASS' if ok else 'FAIL'}  cutout                 outline match {iou:.3f} · {seconds:.1f}s · "
           f"{imageprep.cutout_device()} · {path}")
     return 0 if ok else 1
@@ -68,7 +66,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", help="worker config, e.g. config/worker-dgx.yaml")
     ap.add_argument("--task")
-    ap.add_argument("--demo", default="config/demo.yaml")
+    ap.add_argument("--demo", default=DEFAULTS.conductor.config)
     ap.add_argument("--model", action="append", help="check only these models.yaml keys (repeatable)")
     ap.add_argument("--cutout", action="store_true",
                     help="instead: the conductor's background removal for uploaded pictures")

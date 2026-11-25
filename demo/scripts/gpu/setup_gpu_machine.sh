@@ -17,7 +17,7 @@
 #   --machine workstation|dgx   required; selects config/worker-<machine>.yaml
 #   --show-only                 only the show models (config/demo.yaml), not the full matrix
 #   --no-start                  set up and check, but do not start the workers
-#   --conductor                 also set up and start the conductor here (config/demo.yaml, port 8000),
+#   --conductor                 also set up and start the conductor here (config/demo.yaml, CONDUCTOR_PORT),
 #                               with the cut-out model for uploaded pictures (176 MB, runs on the CPU)
 #   --no-pull                   skip git pull
 #   --reserve-gb N              disk to keep free after downloads (default 10)
@@ -28,15 +28,20 @@ set -uo pipefail
 DEMO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 REPO="$(cd "$DEMO/.." && pwd)"
 SECRETS="${SECRETS:-$DEMO/config.txt}"
-CU=https://download.pytorch.org/whl/cu128
-TORCH=2.7.1
+# shellcheck source=../../config/versions.env
+. "$DEMO/config/versions.env"        # pinned versions, sources and ports (one file for every machine script)
+CU=$TORCH_INDEX_CUDA
+TORCH=$TORCH_VERSION
 SF3D_DIR=third_party/stable-fast-3d
 SA3_DIR=third_party/stable-audio-3
 LLAMA_SRC=third_party/llama.cpp-src
 LLAMA_BIN=third_party/llama.cpp/bin/llama-server
-LLAMA_TAG=b12608
 TASKS=(t2i i23d music llm layout)
-declare -A PORT=([t2i]=8101 [i23d]=8102 [music]=8103 [llm]=8104 [layout]=8105)
+ports_of() {   # "t2i:8101,i23d:8102,..." -> declare -A NAME=([t2i]=8101 ...)
+    local -n _out=$1; local kv
+    for kv in ${2//,/ }; do _out[${kv%%:*}]=${kv##*:}; done
+}
+declare -A PORT=(); ports_of PORT "$WORKER_PORTS"
 declare -A VENV=([t2i]=.venv-t2i [i23d]=.venv-i23d [music]=.venv-music [llm]=.venv-llm [layout]=.venv-llm)
 declare -A BROKEN=()
 
@@ -180,8 +185,6 @@ update_repo() {
     echo "already up to date at $(git -C "$REPO" rev-parse --short HEAD)"
 }
 
-CUDA_RUNFILE=cuda_12.8.1_570.124.06_linux.run
-CUDA_RUNFILE_URL=https://developer.download.nvidia.com/compute/cuda/12.8.1/local_installers/$CUDA_RUNFILE
 
 # need_nvcc PURPOSE [torch|any]: find a CUDA compiler for one build. It only looks; it installs,
 # changes and deletes nothing.
@@ -299,8 +302,8 @@ venv_t2i() {
 }
 venv_i23d() {
     mkvenv .venv-i23d &&
-    .venv-i23d/bin/pip install torch==$TORCH torchvision==0.22.1 --index-url $CU &&
-    clone https://github.com/Stability-AI/stable-fast-3d $SF3D_DIR ff21fc4 &&
+    .venv-i23d/bin/pip install torch==$TORCH torchvision==$TORCHVISION_VERSION --index-url $CU &&
+    clone $SF3D_REPO $SF3D_DIR $SF3D_COMMIT &&
     .venv-i23d/bin/pip install -U setuptools==69.5.1 wheel &&
     grep -v '^\./' $SF3D_DIR/requirements.txt > "$RUN/sf3d-req.txt" &&
     .venv-i23d/bin/pip install -r "$RUN/sf3d-req.txt" || return 1
@@ -320,7 +323,7 @@ venv_i23d() {
 venv_music() {
     mkvenv .venv-music &&
     .venv-music/bin/pip install torch==$TORCH torchaudio==$TORCH --index-url $CU &&
-    clone https://github.com/Stability-AI/stable-audio-3 $SA3_DIR 790793b &&
+    clone $SA3_REPO $SA3_DIR $SA3_COMMIT &&
     .venv-music/bin/pip install -r requirements/music.txt &&
     .venv-music/bin/pip install --no-deps -e $SA3_DIR
 }
@@ -336,7 +339,7 @@ gpu_check() {   # task: torch must run a kernel on the GPU; one automatic reinst
     "$py" -c "$probe" && return 0
     echo "retrying: reinstalling torch from the cu128 index"
     local pk="torch==$TORCH"
-    [ "$1" = i23d ] && pk="$pk torchvision==0.22.1"
+    [ "$1" = i23d ] && pk="$pk torchvision==$TORCHVISION_VERSION"
     [ "$1" = music ] && pk="$pk torchaudio==$TORCH"
     # shellcheck disable=SC2086
     "$(dirname "$py")/pip" install --force-reinstall --no-deps $pk --index-url $CU && "$py" -c "$probe"
@@ -349,7 +352,7 @@ llama_build() {
     command -v cmake >/dev/null || need_input "cmake not found (needed to build llama.cpp)." "Install: sudo apt install -y cmake"
     need_nvcc "llama.cpp" any || return 1
     local host=(); [ -n "$HOST_CXX" ] && host=(-DCMAKE_CUDA_HOST_COMPILER="$HOST_CXX")
-    [ -d $LLAMA_SRC/.git ] || git clone --depth 1 --branch $LLAMA_TAG https://github.com/ggml-org/llama.cpp $LLAMA_SRC || return 1
+    [ -d $LLAMA_SRC/.git ] || git clone --depth 1 --branch $LLAMA_TAG $LLAMA_REPO $LLAMA_SRC || return 1
     if [ "$(git -C $LLAMA_SRC describe --tags 2>/dev/null)" != $LLAMA_TAG ]; then
         echo "$LLAMA_SRC is not release $LLAMA_TAG: delete it (rm -rf $DEMO/$LLAMA_SRC) and run again"; return 1
     fi
@@ -458,12 +461,12 @@ start_worker() {   # task
 }
 
 start_conductor() {
-    if curl -sf -m 3 -o /dev/null http://127.0.0.1:8000/operator; then echo "conductor already running"; return 0; fi
+    if curl -sf -m 3 -o /dev/null http://127.0.0.1:$CONDUCTOR_PORT/operator; then echo "conductor already running"; return 0; fi
     ( unset HF_TOKEN
-      nohup .venv/bin/python -m arcdemo.conductor --config config/demo.yaml --host 0.0.0.0 --port 8000 \
+      nohup .venv/bin/python -m arcdemo.conductor --config config/demo.yaml --host 0.0.0.0 --port $CONDUCTOR_PORT \
           > results/stdout-conductor.log 2>&1 &
       echo $! > results/conductor.pid )
-    local _; for _ in $(seq 30); do curl -sf -m 3 -o /dev/null http://127.0.0.1:8000/operator && return 0; sleep 1; done
+    local _; for _ in $(seq 30); do curl -sf -m 3 -o /dev/null http://127.0.0.1:$CONDUCTOR_PORT/operator && return 0; sleep 1; done
     tail -n 5 results/stdout-conductor.log; return 1
 }
 
@@ -575,7 +578,7 @@ main() {
             if [ -n "${BROKEN[$t]:-}" ]; then skip "start $t worker :${PORT[$t]}" "$t" "${BROKEN[$t]}"
             else run_step "start $t worker :${PORT[$t]}" "$t" start_worker "$t" || true; fi
         done
-        if [ $START = 1 ] && [ $CONDUCTOR = 1 ]; then run_step "start conductor :8000" "" start_conductor || true; fi
+        if [ $START = 1 ] && [ $CONDUCTOR = 1 ]; then run_step "start conductor :$CONDUCTOR_PORT" "" start_conductor || true; fi
     fi
 
     local failed result

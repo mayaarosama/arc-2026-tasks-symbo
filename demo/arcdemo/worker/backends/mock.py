@@ -14,18 +14,17 @@ import numpy as np
 import trimesh
 from PIL import Image, ImageDraw, ImageFont
 
+from ...defaults import DEFAULTS
 from ...schemas import JobRequest
 from .base import Backend, JobContext
 
-# seconds per denoising step for one 1024² image at workstation speed (mock_speed = 1.0)
-_T2I_STEP = {"sd35-large": 1.25, "sd35-large-turbo": 1.25, "sd15": 0.15}
-_T2I_STEP_DEFAULT = 0.5
-# seconds per 3D generation at workstation speed
-_I23D_SECONDS = {"trellis2-4b": 30.0, "trellis-image-large": 25.0, "sf3d": 2.0}
-# GB of accelerator memory each model needs, to simulate out-of-memory on the 16 GB card
-_NEEDS_GB = {"trellis2-4b": 24, "sd35-large": 28, "sd35-medium": 17}
-_MACHINE_GB = {"dgx": 141, "workstation": 16, "cpu": 16}
-_CUDA_ONLY = {"trellis2-4b", "trellis-image-large"}
+M = DEFAULTS.mock     # invented timings and sizes: config/defaults.yaml mock
+_T2I_STEP = M.t2i_step_seconds           # seconds per denoising step, one 1024² image, mock_speed 1.0
+_T2I_STEP_DEFAULT = M.t2i_step_default
+_I23D_SECONDS = M.i23d_seconds           # seconds per 3D generation at mock_speed 1.0
+_NEEDS_GB = M.needs_gb                   # accelerator memory each model needs, to simulate out-of-memory
+_MACHINE_GB = M.machine_gb
+_CUDA_ONLY = set(M.cuda_only)
 
 
 class MockBackend(Backend):
@@ -69,9 +68,9 @@ class MockBackend(Backend):
     # ---- i23d ------------------------------------------------------------------------------
     def _i23d(self, req: JobRequest, ctx: JobContext) -> None:
 
-        total = _I23D_SECONDS.get(self.key, 10.0) * self.speed
+        total = _I23D_SECONDS.get(self.key, M.i23d_seconds_default) * self.speed
         if self.key == "trellis2-4b" and req.resolution:
-            total *= {512: 0.2, 1024: 1.0, 1536: 3.5}.get(req.resolution, 1.0)
+            total *= M.trellis2_resolution_factor.get(req.resolution, 1.0)
         ctx.result.progress.total = 1
         for stage, frac in (("sparse structure", 0.3), ("shape", 0.4), ("texture", 0.3)):
             ctx.progress(stage=stage)
@@ -90,8 +89,7 @@ class MockBackend(Backend):
         handle.apply_transform(trimesh.transformations.rotation_matrix(math.pi / 2, [1, 0, 0]))
         handle.apply_translation([0.38, 0, 0])
         mesh = trimesh.util.concatenate([body, handle])
-        colour = {"dgx": [118, 185, 0, 255], "workstation": [74, 168, 255, 255],
-                  "cpu": [240, 166, 64, 255]}.get(self.cfg["machine"], [200, 200, 200, 255])
+        colour = M.colours.get(self.cfg["machine"], [200, 200, 200, 255])
         mesh.visual.vertex_colors = colour
         time.sleep(0.2 * self.speed)
         path = ctx.output_path(".glb")

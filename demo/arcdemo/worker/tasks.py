@@ -15,10 +15,11 @@ import re
 from pathlib import Path
 from typing import Callable
 
+from ..defaults import DEFAULTS
 from ..schemas import JobRequest
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
-MAX_UPLOAD_BYTES = 20 * 2**20            # an uploaded input picture, already normalised by the conductor
+MAX_UPLOAD_BYTES = DEFAULTS.worker.max_upload_mb * 2**20   # an uploaded input picture, already normalised
 RUN_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")   # a run_id becomes a file name
 
 

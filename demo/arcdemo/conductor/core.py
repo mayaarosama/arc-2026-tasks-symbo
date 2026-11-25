@@ -30,14 +30,15 @@ from typing import Any, Optional
 
 import httpx
 
+from ..defaults import DEFAULTS
 from ..schemas import TERMINAL
 from .config import DemoConfig
 from .replay import ReplayStore, settings_hash
 from .tasks import HANDLERS, handler
+from .urls import MEDIA_REPLAY, MEDIA_SESSION
 
 log = logging.getLogger("arcdemo.conductor")
-MEDIA_SESSION = "/media"
-MEDIA_REPLAY = "/replay-media"
+D = DEFAULTS.conductor                  # timeouts and intervals: config/defaults.yaml
 LLM_FIELDS = ("tokens", "tokens_per_second", "first_token_seconds", "text", "objects")
 
 
@@ -56,7 +57,7 @@ class Conductor:
         cfg.session_dir.mkdir(parents=True, exist_ok=True)
         token = os.environ.get(cfg.token_env)
         self.http = httpx.AsyncClient(headers={"X-Demo-Token": token} if token else {},
-                                      timeout=httpx.Timeout(5.0, connect=2.0))
+                                      timeout=httpx.Timeout(D.http_timeout_seconds, connect=D.http_connect_seconds))
         self.round: Optional[dict] = None
         self.view = "title"
         self.history: list[dict] = []
@@ -148,7 +149,7 @@ class Conductor:
         return out
 
     # ================================================================== health ============
-    async def health_loop(self, every: float = 2.0) -> None:
+    async def health_loop(self, every: float = D.health_every_seconds) -> None:
         while True:
             await self.refresh_health()
             await asyncio.sleep(every)
@@ -161,7 +162,7 @@ class Conductor:
             was_ok = self.health.get(key, {}).get("ok")
             t0 = time.perf_counter()
             try:
-                r = await self.http.get(f"{url}/health", timeout=1.5)
+                r = await self.http.get(f"{url}/health", timeout=D.health_timeout_seconds)
                 r.raise_for_status()
                 self.health[key] = {"ok": True, "url": url, "task": task,
                                     "latency_ms": round((time.perf_counter() - t0) * 1000), **r.json()}
@@ -191,7 +192,8 @@ class Conductor:
         busy, gone = False, []
         for ourl in dict.fromkeys((m.get("workers") or {}).values()):
             try:
-                r = await self.http.post(f"{ourl}/unload", json={"keep_task": task}, timeout=60)
+                r = await self.http.post(f"{ourl}/unload", json={"keep_task": task},
+                                         timeout=D.unload_timeout_seconds)
                 if r.status_code == 409:
                     busy = True             # a run is still ending there: unload it once idle
                     continue
@@ -246,7 +248,7 @@ class Conductor:
         self._prepare_task = asyncio.create_task(self._watch_prepare(task))
         return self.prepare_state
 
-    async def _watch_prepare(self, task: str, timeout: float = 900) -> None:
+    async def _watch_prepare(self, task: str, timeout: float = D.prepare_timeout_seconds) -> None:
         end = time.time() + timeout
         while time.time() < end:
             pending = [mid for mid, p in self.prepare_state.items() if p["status"] == "loading"]
@@ -283,7 +285,7 @@ class Conductor:
                             log.warning("prepare: %s failed: %s", mid, env["last_error"])
                 except Exception as e:  # noqa: BLE001 — keep watching; the worker may be restarting
                     log.warning("prepare: cannot reach %s: %s", mid, type(e).__name__)
-            await asyncio.sleep(1)
+            await asyncio.sleep(D.prepare_poll_seconds)
         for p in self.prepare_state.values():
             if p["status"] == "loading":
                 p.update(status="error", message=f"still not loaded after {timeout / 60:g} minutes")
@@ -445,26 +447,26 @@ class Conductor:
         log.info("round %s | %s -> %s run_id=%s model=%s", rnd["id"], mid, url, job["run_id"][:6], job["model"])
         try:
             r = await self.http.post(f"{url}/jobs", json=job)
-            give_up = time.time() + 15        # Start right after Stop: the last run may still be ending
+            give_up = time.time() + D.busy_retry_seconds   # Start right after Stop: the last run may still be ending
             while r.status_code == 409 and time.time() < give_up and not cell.get("_operator_replay"):
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(D.busy_retry_every_seconds)
                 r = await self.http.post(f"{url}/jobs", json=job)
         except Exception as e:  # noqa: BLE001
             await self._fallback(rnd, mid, f"worker unreachable ({type(e).__name__})")
             return
         if r.status_code != 200:
-            await self._fallback(rnd, mid, f"worker rejected the job: HTTP {r.status_code} {r.text[:200]}")
+            await self._fallback(rnd, mid, f"worker rejected the job: HTTP {r.status_code} {r.text[:D.reject_text_chars]}")
             return
 
         last_ok = time.time()
         fetched: set[str] = set()
         budget = rnd["budget_seconds"]
         while True:
-            await asyncio.sleep(0.4)
+            await asyncio.sleep(D.poll_every_seconds)
             if cell.get("_operator_replay"):
                 return
             try:
-                resp = await self.http.get(f"{url}/jobs/{job['run_id']}", timeout=2.5)
+                resp = await self.http.get(f"{url}/jobs/{job['run_id']}", timeout=D.poll_timeout_seconds)
                 last_ok = time.time()
             except Exception as e:  # noqa: BLE001
                 log.debug("poll %s failed: %s", mid, type(e).__name__)
@@ -483,9 +485,9 @@ class Conductor:
                 break
             elapsed = time.time() - rnd["started_at"]
             # Slow machine still busy when the time is up: stop it and show its full recording.
-            # (2 s of slack lets the worker report its own budget_exceeded with any partial output.)
+            # (a few seconds of slack let the worker report its own budget_exceeded with any partial output.)
             if (cell["full_recording"] and self.allow_replay and budget is not None
-                    and elapsed > budget + 2 and self._has_full_recording(rnd, mid)):
+                    and elapsed > budget + D.time_up_slack_seconds and self._has_full_recording(rnd, mid)):
                 await self._post_quiet(f"{url}/jobs/{job['run_id']}/cancel", f"cancel {mid}")
                 self._log(rnd, mid, {**res, "status": "cancelled", "message": f"time up at {budget:g} s"},
                           "MOCK" if cell["mock"] else "LIVE")
@@ -499,7 +501,7 @@ class Conductor:
         cell["result"] = res          # full worker record: the replay table and debugging use it
         status = res["status"]
         if status == "error":
-            await self._fallback(rnd, mid, f"live run failed: {res.get('message', '')[:160]}")
+            await self._fallback(rnd, mid, f"live run failed: {res.get('message', '')[:D.error_text_chars]}")
             return
         cell["status"] = status
         cell["final_seconds"] = self._final_seconds(res, budget)
@@ -550,7 +552,7 @@ class Conductor:
             dest = self.cfg.session_dir / rnd["id"] / mid / name
             dest.parent.mkdir(parents=True, exist_ok=True)
             try:
-                async with self.http.stream("GET", f"{url}/files/{name}", timeout=60) as resp:
+                async with self.http.stream("GET", f"{url}/files/{name}", timeout=D.file_timeout_seconds) as resp:
                     resp.raise_for_status()
                     with open(dest, "wb") as f:
                         async for chunk in resp.aiter_bytes():

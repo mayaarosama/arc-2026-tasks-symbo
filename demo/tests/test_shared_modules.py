@@ -9,16 +9,16 @@ import time
 from pathlib import Path
 
 import pytest
+import yaml
 from pydantic import ValidationError
 
-from arcdemo import logs, weights
+from arcdemo import defaults, logs, prompts, weights
 from arcdemo.conductor import moderation
 from arcdemo.conductor.replay import ReplayStore, settings_hash
 from arcdemo.schemas import TERMINAL, HealthInfo, JobRequest, JobResult, Progress
 from arcdemo.worker.backends import base
 from arcdemo.worker.metrics import Clock, MemoryMeter, _cuda_devices, cuda_sync
-
-from tests.helpers import make_context
+from tests.helpers import CONFIG, ROOT, make_context
 
 
 # ------------------------------------------------------------------ moderation (Task 1 live prompt)
@@ -44,10 +44,9 @@ def test_too_long_prompt_is_blocked():
     assert moderation.check_prompt("a" * 300)["ok"]
 
 
-def test_extra_blocklist_file_is_read_on_every_check(tmp_path, monkeypatch):
-    (tmp_path / "config").mkdir()
-    (tmp_path / "config" / "blocklist.txt").write_text("# comment\nzebra\n\n", encoding="utf-8")
-    monkeypatch.setattr(moderation, "ROOT", tmp_path)
+def test_blocklist_file_is_read_on_every_check(tmp_path, monkeypatch):
+    (tmp_path / "blocklist.txt").write_text("# comment\nzebra\n\n", encoding="utf-8")
+    monkeypatch.setattr(moderation, "BLOCKLIST", tmp_path / "blocklist.txt")
     assert moderation.check_prompt("a zebra")["hits"] == ["zebra"]
     assert "# comment" not in moderation._terms()
 
@@ -263,3 +262,30 @@ def test_base_backend_is_abstract_and_free_memory_is_safe():
     b.model = object()
     b.unload()
     assert b.model is None
+
+
+# ------------------------------------------------------------------ config/defaults.yaml
+def test_defaults_file_loads_and_rejects_typos_and_wrong_types(tmp_path):
+    raw = yaml.safe_load((CONFIG / "defaults.yaml").read_text(encoding="utf-8"))
+    assert defaults.load().conductor.port == raw["conductor"]["port"]
+    bad = {**raw, "conductor": {**raw["conductor"], "pol_every_seconds": 1}}
+    (tmp_path / "d.yaml").write_text(yaml.safe_dump(bad))
+    with pytest.raises(ValidationError, match="pol_every_seconds"):
+        defaults.load(tmp_path / "d.yaml")
+    bad = {**raw, "llm": {**raw["llm"], "slots": "many"}}
+    (tmp_path / "d.yaml").write_text(yaml.safe_dump(bad))
+    with pytest.raises(ValidationError, match="slots"):
+        defaults.load(tmp_path / "d.yaml")
+
+
+def test_every_data_file_the_defaults_name_exists():
+    d = defaults.DEFAULTS
+    for rel in (d.stage.spare_prompts, d.i23d.upload.rules, d.layout.exemplars):
+        assert (ROOT / rel).is_file(), rel
+
+
+def test_prompt_files_load():
+    assert prompts.llm_system() and prompts.text("layout_system.txt")
+    assert len(prompts.json_doc("layout_examples.json")["examples"]) == 2
+    with pytest.raises(FileNotFoundError):
+        prompts.text("no-such-prompt.txt")

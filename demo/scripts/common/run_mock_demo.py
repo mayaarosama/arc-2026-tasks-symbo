@@ -12,8 +12,12 @@ import sys
 import time
 from pathlib import Path
 
+from arcdemo.defaults import DEFAULTS
+from scripts.common.settings import SCRIPTS
+
 ROOT = Path(__file__).resolve().parents[2]       # demo/
-WORKERS = [("dgx", 9101), ("workstation", 9102), ("cpu", 9103)]
+WORKERS = list(SCRIPTS.run_mock_demo.workers.items())     # config/scripts.yaml (match config/demo-mock.yaml)
+CONDUCTOR = f"http://127.0.0.1:{DEFAULTS.conductor.port}"
 
 
 def start_workers() -> list[subprocess.Popen]:
@@ -32,9 +36,9 @@ def main() -> None:
     a = ap.parse_args()
     procs = start_workers()
     if not a.no_conductor:
-        procs.append(subprocess.Popen([sys.executable, "-m", "arcdemo.conductor", "--config", "config/demo-mock.yaml"],
+        procs.append(subprocess.Popen([sys.executable, "-m", "arcdemo.conductor", "--config", SCRIPTS.run_mock_demo.conductor_config],
                                       cwd=ROOT))
-        print("conductor: http://127.0.0.1:8000/operator   stage: http://127.0.0.1:8000/stage")
+        print(f"conductor: {CONDUCTOR}/operator   stage: {CONDUCTOR}/stage")
     try:   # runs until Ctrl+C; a killed worker (failure drill) does not stop the others
         reported = set()
         while True:

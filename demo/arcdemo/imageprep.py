@@ -15,14 +15,18 @@ The operator-facing spec is INPUT_SPEC (shown next to the upload box and in the 
 from __future__ import annotations
 
 import io
+import json
 import os
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
+from string import Template
 from typing import Optional
 
 import numpy as np
 from PIL import Image, ImageOps
+
+from .defaults import DEFAULTS
 
 try:                     # the conductor's venv has it; without it only transparent PNGs can be used
     import onnxruntime as ort
@@ -31,24 +35,21 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[1]          # demo/
 
-MAX_BYTES = 10 * 1024 * 1024    # file size
-MIN_SIDE = 256                  # shortest side: below this there is too little detail to rebuild
-GOOD_SIDE = 512                 # shortest side we recommend (SF3D's input is 512 px)
-MAX_SIDE = 4096                 # longer images are scaled down first (not rejected)
-OUT_SIDE = 512                  # what every machine receives
-FILL = 0.85                     # the object's share of the output side (upstream SF3D run.py uses 0.85)
-MIN_COVER, MAX_COVER = 0.03, 0.95   # share of the image that is the object, before cropping
-EDGE_PX = 2                     # foreground within this many pixels of the border = cropped object
+UP = DEFAULTS.i23d.upload                       # limits: config/defaults.yaml i23d.upload
+MAX_BYTES = UP.max_mb * 1024 * 1024             # file size
+MIN_SIDE = UP.min_side                          # shortest side: below this there is too little detail to rebuild
+GOOD_SIDE = UP.good_side                        # shortest side we recommend (SF3D's input is 512 px)
+MAX_SIDE = UP.max_side                          # longer images are scaled down first (not rejected)
+OUT_SIDE = UP.out_side                          # what every machine receives
+FILL = UP.fill                                  # the object's share of the output side
+MIN_COVER, MAX_COVER = UP.min_cover, UP.max_cover   # share of the image that is the object, before cropping
+EDGE_PX = UP.edge_px                            # foreground within this many pixels of the border = cropped object
+U2NET_SIDE = 320                                # U2-Net's input size, and ImageNet normalisation (fixed by the model)
+IMAGENET_MEAN, IMAGENET_STD = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
 
-INPUT_SPEC = [
-    ("File", "PNG, JPEG or WebP, up to 10 MB. Shortest side 512 px or more (256 px is the minimum)."),
-    ("Content", "One object, whole and not cropped: nothing touching the edge of the picture."),
-    ("Background", "Plain and in a different colour from the object. A PNG with a transparent background is best."),
-    ("View", "Three-quarter view from slightly above (about 20° up, 35° round), like the stage examples."),
-    ("Light", "Even and soft. No hard shadows, glare or strong reflections: they get painted into the texture."),
-    ("Avoid", "Glass and see-through objects, mirrors, thin wires or hair, text-heavy surfaces, people, "
-              "and scenes with several objects."),
-]
+# What the operator is told (data/i23d/upload_rules.json, numbers from the limits above).
+INPUT_SPEC = [(what, Template(rule).substitute(max_mb=UP.max_mb, good_side=GOOD_SIDE, min_side=MIN_SIDE))
+              for what, rule in json.loads((ROOT / UP.rules).read_text(encoding="utf-8"))["rules"]]
 
 
 class Rejected(ValueError):
@@ -120,9 +121,9 @@ def cutout_device() -> str:
 def u2net_mask(img: Image.Image) -> Image.Image:
     """An 'L' mask the size of img: 255 = object. rembg 2.0.57's U2netSession, without rembg."""
     sess = _session()
-    small = np.asarray(img.convert("RGB").resize((320, 320), Image.LANCZOS), dtype=np.float32)
+    small = np.asarray(img.convert("RGB").resize((U2NET_SIDE, U2NET_SIDE), Image.LANCZOS), dtype=np.float32)
     small = small / max(float(small.max()), 1e-6)
-    x = (small - np.array([0.485, 0.456, 0.406], np.float32)) / np.array([0.229, 0.224, 0.225], np.float32)
+    x = (small - np.array(IMAGENET_MEAN, np.float32)) / np.array(IMAGENET_STD, np.float32)
     x = x.transpose(2, 0, 1)[None].astype(np.float32)
     pred = sess.run(None, {sess.get_inputs()[0].name: x})[0][0, 0]
     pred = (pred - pred.min()) / max(float(pred.max() - pred.min()), 1e-6)
@@ -134,7 +135,7 @@ def _has_real_alpha(img: Image.Image) -> bool:
     if "A" not in img.getbands():
         return False
     a = np.asarray(img.getchannel("A"))
-    return float((a < 128).mean()) > 0.02       # at least some of the picture is see-through
+    return float((a < 128).mean()) > UP.transparent_share   # at least some of the picture is see-through
 
 
 def prepare(data: bytes) -> Prepared:
@@ -181,7 +182,7 @@ def prepare(data: bytes) -> Prepared:
     if solid[:e].any() or solid[-e:].any() or solid[:, :e].any() or solid[:, -e:].any():
         raise Rejected("The object touches the edge of the picture, so part of it is probably cut off. "
                        "Use a picture with space all round the object.")
-    if cover < 0.08:
+    if cover < UP.small_cover_warning:
         warnings.append("The object is small in the picture; it is enlarged, so it may look soft.")
 
     rgba.putalpha(Image.fromarray(np.where(a < 8, 0, a).astype(np.uint8), "L"))   # drop faint halo

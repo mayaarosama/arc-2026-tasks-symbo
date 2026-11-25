@@ -1,2 +1,80 @@
-# Extra blocked terms for the live audience prompt, one per line (prefix match on word start).
+# Blocked terms for the live audience prompt (Task 1), one per line, matched at the start of a word
+# ("decapitat" blocks decapitate, decapitated ...). Read on every check: edits apply at once.
 # Add names of people present at the event, competitor brands, anything local and sensitive.
+
+# sexual content and nudity
+nude
+naked
+nsfw
+porn
+sex
+sexy
+erotic
+topless
+lingerie
+underwear
+bikini
+
+# violence and death
+gore
+gory
+blood
+bloody
+corpse
+dead
+body
+decapitat
+dismember
+mutilat
+suicide
+self-harm
+
+# weapons and crime
+kill
+murder
+shoot
+shooting
+gun
+rifle
+bomb
+terror
+weapon
+massacre
+war
+crime
+
+# hate symbols
+nazi
+swastika
+kkk
+racist
+slur
+
+# minors
+child
+kid
+minor
+teen
+schoolgirl
+
+# real public figures
+trump
+biden
+putin
+netanyahu
+xi
+jinping
+president
+prime
+minister
+celebrity
+
+# trademarks and characters
+logo
+trademark
+disney
+marvel
+pixar
+nintendo
+pokemon
+mickey

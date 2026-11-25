@@ -16,21 +16,15 @@ import urllib.request
 from pathlib import Path
 
 from arcdemo.conductor.config import DemoConfig
+from arcdemo.defaults import DEFAULTS
 from arcdemo.weights import DEPENDENCIES  # noqa: F401  (also read by plan_downloads.py)
+from scripts.common.settings import SCRIPTS
 
-# Fallback tiers that are not in the settings matrix but must be on disk.
-FALLBACKS = {("cpu", "t2i"): ["sd15"]}
-# Skip duplicate single-file checkpoints: diffusers loads the per-component folders.
-IGNORE = {
-    "stabilityai/stable-diffusion-3.5-large": ["sd3.5_large.safetensors", "text_encoders/*"],
-    "stabilityai/stable-diffusion-3.5-large-turbo": ["sd3.5_large_turbo.safetensors", "text_encoders/*"],
-    "stabilityai/stable-diffusion-3.5-medium": ["sd3.5_medium.safetensors", "text_encoders/*"],
-    "stable-diffusion-v1-5/stable-diffusion-v1-5": ["*.ckpt", "v1-5-pruned*.safetensors", "*.bin",
-                                                    "*fp16*", "*non_ema*"],
-    "facebook/dinov2-large": ["pytorch_model.bin"],                 # transformers loads model.safetensors
-    "laion/CLIP-ViT-B-32-laion2B-s34B-b79K": ["model.safetensors", "pytorch_model.bin",   # open_clip reads
-                                              "open_clip_model.safetensors"],             # open_clip_pytorch_model.bin
-}
+S = SCRIPTS.download_weights      # config/scripts.yaml
+# Fallback tiers that are not in the settings matrix but must be on disk: (machine, task) -> keys.
+FALLBACKS = {tuple(k.split("/")): v for k, v in S.fallbacks.items()}
+# Files not to download per repo (duplicate single-file checkpoints: diffusers loads the folders).
+IGNORE = S.ignore
 
 
 def model_keys(cfg: DemoConfig, machine: str, task: str) -> set[str]:
@@ -54,7 +48,7 @@ def repos_for(cfg: DemoConfig, keys: set[str]) -> list[str]:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", default="config/demo.yaml")
+    ap.add_argument("--config", default=DEFAULTS.conductor.config)
     ap.add_argument("--machine", help="with --task: everything this machine runs for the task")
     ap.add_argument("--task")
     ap.add_argument("--model", action="append", help="instead: just these models.yaml keys (repeatable)")
@@ -92,12 +86,12 @@ def main() -> None:
 
 # U^2-Net, the model rembg (and SF3D's run.py) use by default, from rembg's GitHub release. Not on
 # the Hugging Face Hub under an official repo. Saved where arcdemo/imageprep.py looks for it.
-CUTOUT_URL = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx"
-CUTOUT_BYTES = 175_997_641
+CUTOUT_URL = S.cutout_url
+CUTOUT_BYTES = S.cutout_bytes
 
 
 def fetch_cutout(dry_run: bool = False) -> None:
-    dest = Path(__file__).resolve().parents[2] / "weights" / "u2net" / "u2net.onnx"
+    dest = Path(__file__).resolve().parents[2] / S.cutout_path
     print(f"cut-out model: {CUTOUT_URL} -> {dest}")
     if dest.is_file() and dest.stat().st_size == CUTOUT_BYTES:
         print("cached", dest)

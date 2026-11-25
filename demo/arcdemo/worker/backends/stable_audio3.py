@@ -31,12 +31,13 @@ try:                     # the music venv only: the worker imports this module w
 except ImportError:
     sf = torch = StableAudioModel = None
 
+from ...defaults import DEFAULTS
 from ...schemas import JobRequest
 from ..metrics import cuda_sync
 from .base import Backend, JobContext
 
-DEFAULT_STEPS = 8          # the post-trained (ARC) checkpoints are tuned for 8 steps
-SAMPLE_RATE = 44100
+DEFAULT_STEPS = DEFAULTS.music.steps          # config/defaults.yaml music (8: what the checkpoints are tuned for)
+SAMPLE_RATE = DEFAULTS.music.sample_rate
 
 
 class StableAudio3(Backend):
@@ -67,7 +68,7 @@ class StableAudio3(Backend):
                 "precision": "fp16" if self._half else "fp32"}
 
     def _generate_track(self, req: JobRequest, seed: int, path: Path) -> None:
-        length = float(req.length_s or 30)
+        length = float(req.length_s or DEFAULTS.music.length_s)
         kwargs = {}
         if req.mode == "continuation" and req.audio_path:
             data, sr = sf.read(req.audio_path, dtype="float32", always_2d=True)   # (samples, ch)

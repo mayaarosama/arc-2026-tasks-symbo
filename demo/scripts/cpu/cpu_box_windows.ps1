@@ -29,9 +29,15 @@ $Demo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 if (-not $Secrets) { $Secrets = Join-Path $Demo "..\config.txt" }
 $Sf3dDir = Join-Path $Demo "third_party\stable-fast-3d"
 $Sa3Dir = Join-Path $Demo "third_party\stable-audio-3"
-$Sa3Torch = "2.7.1"                 # stable-audio-3 pins torch + torchaudio to this version
-$TorchIndex = "https://download.pytorch.org/whl/cpu"
-$Ports = [ordered]@{ t2i = 8101; i23d = 8102; music = 8103; llm = 8104; layout = 8105 }
+# Pinned versions, sources and ports: config/versions.env (KEY=value lines, shared with the Linux scripts).
+$Versions = @{}
+foreach ($line in Get-Content (Join-Path $Demo "config\versions.env")) {
+    if ($line -match '^([A-Z0-9_]+)=(.*)$') { $Versions[$Matches[1]] = $Matches[2].Trim("'", '"') }
+}
+$Sa3Torch = $Versions.TORCH_VERSION      # stable-audio-3 pins torch + torchaudio to this version
+$TorchIndex = $Versions.TORCH_INDEX_CPU
+$Ports = [ordered]@{}
+foreach ($kv in $Versions.WORKER_PORTS.Split(",")) { $k, $v = $kv.Split(":"); $Ports[$k] = [int]$v }
 Set-Location $Demo
 New-Item -ItemType Directory -Force results | Out-Null
 
@@ -92,10 +98,10 @@ function Invoke-Setup {
 
         Write-Host "== image-to-3D env (.venv-i23d): Stable Fast 3D"
         New-DemoVenv ".venv-i23d"
-        if (-not (Test-Path $Sf3dDir)) { Invoke-Step "git" @("clone", "https://github.com/Stability-AI/stable-fast-3d", $Sf3dDir) }
+        if (-not (Test-Path $Sf3dDir)) { Invoke-Step "git" @("clone", $Versions.SF3D_REPO, $Sf3dDir) }
         Write-Host "stable-fast-3d commit: $(git -C $Sf3dDir rev-parse HEAD)"
         $py3d = Get-VenvPython ".venv-i23d"
-        Invoke-Step $py3d @("-m", "pip", "install", "-q", "-U", "setuptools==69.5.1", "wheel")
+        Invoke-Step $py3d @("-m", "pip", "install", "-q", "-U", "setuptools==$($Versions.SETUPTOOLS_VERSION)", "wheel")
         Push-Location $Sf3dDir   # its requirements.txt installs ./texture_baker and ./uv_unwrapper by relative path
         try { Invoke-Step $py3d @("-m", "pip", "install", "-q", "-r", "requirements.txt") } finally { Pop-Location }
         Invoke-Step $py3d @("-m", "pip", "install", "-q", "-r", "requirements/worker-base.txt")
@@ -104,7 +110,7 @@ function Invoke-Setup {
 
         Write-Host "== music env (.venv-music): Stable Audio 3.0 Small"
         New-DemoVenv ".venv-music" @("torch==$Sa3Torch", "torchaudio==$Sa3Torch")
-        if (-not (Test-Path $Sa3Dir)) { Invoke-Step "git" @("clone", "https://github.com/Stability-AI/stable-audio-3", $Sa3Dir) }
+        if (-not (Test-Path $Sa3Dir)) { Invoke-Step "git" @("clone", $Versions.SA3_REPO, $Sa3Dir) }
         Write-Host "stable-audio-3 commit: $(git -C $Sa3Dir rev-parse HEAD)"
         $pyMusic = Get-VenvPython ".venv-music"
         Invoke-Step $pyMusic @("-m", "pip", "install", "-q", "-r", "requirements/music.txt")
@@ -115,7 +121,7 @@ function Invoke-Setup {
         $pyLlm = Get-VenvPython ".venv-llm"
         Invoke-Step $pyLlm @("-m", "pip", "install", "-q", "--upgrade", "pip")
         Invoke-Step $pyLlm @("-m", "pip", "install", "-q", "-r", "requirements/llm.txt")
-        Invoke-Step $pyLlm @("scripts/cpu/fetch_llama_cpp.py")       # the pinned CPU release, third_party\llama.cpp\bin
+        Invoke-Step $pyLlm @("-m", "scripts.cpu.fetch_llama_cpp")       # the pinned CPU release, third_party\llama.cpp\bin
 
         Write-Host "== weights (HF_TOKEN from the secrets file)"
         Invoke-Step (Get-VenvPython ".venv-t2i") @("-m", "scripts.common.download_weights", "--machine", "cpu", "--task", "t2i")
@@ -125,7 +131,7 @@ function Invoke-Setup {
         Invoke-Step $pyLlm @("-m", "scripts.common.download_weights", "--machine", "cpu", "--task", "layout")   # same file: already there
 
         Write-Host "== this machine"
-        Invoke-Step (Get-VenvPython ".venv-t2i") @("scripts/cpu/check_cpu.py")
+        Invoke-Step (Get-VenvPython ".venv-t2i") @("-m", "scripts.cpu.check_cpu")
         Write-Host "== offline check (network use is now forbidden; a FAIL here would fail on stage)"
         Remove-Item env:HF_TOKEN
         Invoke-Step (Get-VenvPython ".venv-t2i") @("-m", "scripts.common.verify_offline", "--config", $WorkerConfig, "--task", "t2i")
@@ -225,8 +231,8 @@ function Open-Firewall {
     $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
         [Security.Principal.WindowsBuiltInRole]::Administrator)
     if (-not $admin) { throw "run this action from an Administrator PowerShell" }
-    New-NetFirewallRule -DisplayName "ARC demo workers" -Direction Inbound -Protocol TCP -LocalPort 8101, 8102, 8103, 8104, 8105 -Action Allow | Out-Null
-    Write-Host "inbound TCP 8101-8105 allowed"
+    New-NetFirewallRule -DisplayName "ARC demo workers" -Direction Inbound -Protocol TCP -LocalPort @($Ports.Values) -Action Allow | Out-Null
+    Write-Host "inbound TCP $(@($Ports.Values) -join ', ') allowed"
 }
 
 switch ($Action) {

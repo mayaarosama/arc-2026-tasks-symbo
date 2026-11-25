@@ -42,15 +42,17 @@ import random
 import threading
 import time
 from contextlib import closing
+from string import Template
 from typing import Callable, Iterator, Optional
 
-from ...layout_prompt import (  # noqa: F401 — re-exported: tests and tools use layout.<name>
-    CATALOG, DOOR_CLEARANCE, EXAMPLES, FACING, FURNITURE, MUST_HAVE_COST, OVERLAP_SHARE, PROMPT_VERSION, REMOVE_COST,
-    ROOMS, SYSTEM, WALL_PIECES,
-    WALL_TOLERANCE, check, continue_messages, css_grammar, css_line, layoutgpt_messages, parse_css, describe_room, edit_grammar, footprint, grammar, line_of, measure,
-    messages, parse_edit, parse_line, problem_cost, repair_grammar, repair_messages, review_messages, room_cost,
-    summarise, walls,
-)
+from ...defaults import DEFAULTS
+from ...layout_prompt import (CATALOG, DOOR_CLEARANCE,  # noqa: F401 — re-exported: tests and tools use layout.<name>
+                              EXAMPLES, FACING, FIX, FURNITURE, MUST_HAVE_COST, OVERLAP_SHARE, PROMPT_VERSION,
+                              REMOVE_COST, ROOMS, SYSTEM, WALL_PIECES, WALL_TOLERANCE, check, continue_messages,
+                              css_grammar, css_line, describe_room, edit_grammar, footprint, grammar,
+                              layoutgpt_messages, line_of, measure, messages, parse_css, parse_edit, parse_line,
+                              problem_cost, repair_grammar, repair_messages, review_messages, room_cost, summarise,
+                              walls)
 from ...schemas import JobRequest
 from .base import Backend, JobContext
 from .llm import LlamaServer, run_streams
@@ -59,7 +61,7 @@ from .llm import LlamaServer, run_streams
 def room_spec(req: JobRequest) -> dict:
     if not req.floor_plan or len(req.floor_plan) < 3:
         raise ValueError("layout job needs floor_plan: a list of at least three [x, y] points")
-    room = req.room_type or "bedroom"
+    room = req.room_type or DEFAULTS.layout.room_type
     if room not in ROOMS:
         raise ValueError(f"unknown room_type '{room}' (known: {', '.join(ROOMS)})")
     style = req.layout_prompt or PROMPT_VERSION
@@ -68,12 +70,12 @@ def room_spec(req: JobRequest) -> dict:
     if style == "layoutgpt" and (req.repairs or req.review_rounds):
         raise ValueError("self-correction (repairs, review_rounds) works with the v3.1 prompt only")
     return {"room_type": room, "floor_plan": req.floor_plan, "door": req.door,
-            "max_objects": int(req.max_objects or 10)}
+            "max_objects": int(req.max_objects or DEFAULTS.layout.max_objects)}
 
 
 POSE = ("x", "y", "rot", "wall", "at")    # what a fix may change; size and class stay
-REPAIR_TOKENS = 40      # one line is 13-16 tokens
-REVIEW_TOKENS = 200     # up to 6 edits and "done"
+REPAIR_TOKENS = DEFAULTS.layout.repair_tokens     # one line is 13-16 tokens (config/defaults.yaml layout)
+REVIEW_TOKENS = DEFAULTS.layout.review_tokens     # up to max_edits edits and "done"
 
 
 
@@ -261,9 +263,9 @@ class _Room:
                     self.publish()
                     cost, kept_any = new_cost, True
                 else:
-                    notes.append(f"Your edit \"{got.strip()}\" was undone: it made the room worse.")
+                    notes.append(Template(FIX["undone"]).substitute(edit=got.strip()))
             idle = 0 if kept_any else idle + 1
-            if idle >= 2:                 # two rounds without a kept edit: the model has no better idea
+            if idle >= DEFAULTS.layout.idle_review_rounds:   # rounds without a kept edit: the model has no better idea
                 return
 
     def run(self) -> None:
@@ -375,7 +377,7 @@ class LayoutServer(LayoutBackend, LlamaServer):
     def _ctx_per_slot(self) -> int:
         """The layout prompt (rules, two worked examples, the room) is ~2,000-2,800 tokens before the
         reply, more than the Task 4 default of 2,048 per slot. Worker config key layout_ctx overrides it."""
-        return int(self.cfg.get("layout_ctx", 4096))
+        return int(self.cfg.get("layout_ctx", DEFAULTS.layout.ctx_per_slot))
 
     def load(self) -> None:
         super().load()
@@ -481,7 +483,7 @@ class LayoutMock(LayoutBackend):
         time.sleep(0.3)
 
     def _drip(self, lines: list[str], req: JobRequest, max_tokens: int, seed: int) -> Iterator[tuple[str, int]]:
-        delay = 0.025 * float(self.cfg.get("mock_speed", 1.0)) * (1 + req.streams / 32)
+        delay = DEFAULTS.mock.token_delay_seconds * float(self.cfg.get("mock_speed", 1.0)) * (1 + req.streams / 32)
         rng = random.Random(seed)
         sent = 0
         for line in lines:

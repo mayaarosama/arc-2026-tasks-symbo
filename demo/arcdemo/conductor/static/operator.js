@@ -20,7 +20,8 @@ let segId = null;
 let spares = [];          // pre-vetted spare prompts (t2i), typed as a custom prompt
 let planSeq = 0;          // ignore plan answers that arrive after a newer selection
 
-const VIEW_NAMES = [["title", "Title screen"], ["round", "Live results"], ["summary", "Summary chart"], ["blank", "Blank screen"]];
+// The projector's views (their list comes from config/defaults.yaml stage.views, via /api/config).
+const VIEW_LABEL = { title: "Title screen", round: "Live results", summary: "Summary chart", blank: "Blank screen" };
 
 async function api(path, body) {
   const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" },
@@ -326,7 +327,7 @@ function renderCells(s) {
     const [state, note] = line.querySelectorAll(".what");
     state.textContent = `${cellWords(r, c)} · ${fmtClock(Demo.cellClock(r, c))}${count}`;
     note.textContent = c.note || "";
-    const busy = c.mode !== "REPLAY" && !["ok", "budget_exceeded", "out_of_memory", "cancelled", "error", "unavailable"].includes(c.status);
+    const busy = c.mode !== "REPLAY" && ![...cfg.ui.terminal, "unavailable"].includes(c.status);
     line.querySelector(".stop").disabled = !running || !busy;
     line.querySelector(".rec").disabled = c.mode === "REPLAY";
   }
@@ -421,10 +422,8 @@ async function loadLayoutView(c, box) {
 }
 
 // ---------------------------------------------------------------- wiring ---------------
-Promise.all([
-  fetch("/api/config").then((r) => r.json()),
-  fetch("/media-input/data/t2i/live_fallback_prompts.json").then((r) => (r.ok ? r.json() : { prompts: [] })).catch(() => ({ prompts: [] })),
-]).then(([c, fb]) => {
+fetch("/api/config").then((r) => r.json()).then(async (c) => {
+  const fb = await fetch(c.ui.spare_prompts).then((r) => (r.ok ? r.json() : { prompts: [] })).catch(() => ({ prompts: [] }));
   cfg = c;
   spares = fb.prompts || [];
   const segs = document.getElementById("segments");
@@ -445,8 +444,8 @@ Promise.all([
     force.appendChild(lab);
   }
   const views = document.getElementById("views");
-  for (const [v, name] of VIEW_NAMES) {
-    const b = el("button", null, name);
+  for (const v of c.ui.views) {
+    const b = el("button", null, VIEW_LABEL[v] || v);
     b.onclick = () => api("/api/view", { view: v });
     views.appendChild(b);
   }
@@ -459,7 +458,7 @@ Promise.all([
     onChoice();
   }
   Demo.onState((s) => { renderHealth(s); renderCells(s); });
-  Demo.poll(500);
+  Demo.poll(c.ui.operator_poll_ms);
 });
 
 document.getElementById("example").onchange = onChoice;

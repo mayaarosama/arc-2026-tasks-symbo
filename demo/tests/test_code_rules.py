@@ -46,7 +46,7 @@ def test_imports_are_at_the_top(path):
               and _root(sub) not in DEFERRED.get(rel, set())]
     assert not inside, f"{rel}: imports inside functions: {inside}"
     body = tree.body
-    last = max((i for i, n in enumerate(body) if _is_import_block(n)), default=-1)
+    last = max((i for i, n in enumerate(body) if _is_import_block(n)), default=0)   # 0: no imports at all
     early = [f"line {n.lineno}" for n in body[:last]
              if not _is_import_block(n) and not (isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant))]
     assert not early, f"{rel}: code before the last import: {early}"
