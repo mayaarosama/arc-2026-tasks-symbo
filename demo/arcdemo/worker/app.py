@@ -45,6 +45,9 @@ def load_worker_config(path: str, tasks: list[str]) -> dict:
         models[key] = {**models[key], **extra}
     cfg["models"] = models
     cfg["tasks"] = tasks
+    if "layout" in tasks:     # the furniture catalogue the prompt, grammar and room checks use
+        from ..layout_prompt import DEFAULT_CATALOG, load_catalog
+        cfg["layout_catalog_sha"] = load_catalog(cfg.get("layout_catalog", DEFAULT_CATALOG))["sha"]
     cfg["results_dir"] = str((ROOT / cfg.get("results_dir", "results")).resolve())
     Path(cfg["results_dir"]).mkdir(parents=True, exist_ok=True)
     return cfg

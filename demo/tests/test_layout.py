@@ -214,3 +214,51 @@ def test_layoutgpt_with_self_correction_is_refused():
     import pytest
     with pytest.raises(ValueError, match="v3.1 prompt only"):
         L.room_spec(req)
+
+
+# ------------------------------------------------------------------ furniture catalogue ------
+def test_catalogue_is_what_the_prompt_uses():
+    import json
+    doc = json.loads((P.ROOT / P.DEFAULT_CATALOG).read_text(encoding="utf-8"))
+    assert P.FURNITURE == {c: tuple(f["size"]) for c, f in doc["furniture"].items()}
+    assert P.WALL_PIECES == {c for c, f in doc["furniture"].items() if f["place"] == "wall"}
+    assert P.ROOMS == doc["rooms"]
+    text = P.describe_room({**ROOM, "max_objects": 3})
+    for c in dict.fromkeys(doc["rooms"]["bedroom"]):
+        assert f"{c} " in text                         # every allowed object reaches the model
+
+
+def test_every_catalogue_object_has_its_model_files():
+    P.load_catalog(check_models=True)                  # raises if a .glb is missing
+
+
+def test_bad_catalogue_is_refused_with_every_problem(tmp_path):
+    import json
+
+    import pytest
+    bad = {"assets_dir": str(tmp_path), "furniture": {"bed": {"size": [1, 2], "place": "wall", "model": "nope.glb"}},
+           "rooms": {"bedroom": ["bed", "sofa"]}}
+    p = tmp_path / "f.json"
+    p.write_text(json.dumps(bad), encoding="utf-8")
+    try:
+        with pytest.raises(ValueError) as e:
+            P.load_catalog(p, check_models=True)
+        msg = str(e.value)
+        assert "bed: size" in msg and "'sofa' is not in furniture" in msg and "nope.glb not found" in msg
+        assert "needs 'study'" in msg                  # the prompt's worked examples need their rooms
+        assert P.ROOMS["bedroom"][0] == "double_bed"   # a refused catalogue changes nothing
+    finally:
+        P.load_catalog()
+
+
+def test_conductor_serves_the_catalogue_and_its_models():
+    from fastapi.testclient import TestClient
+
+    from arcdemo.conductor.app import create_app
+    from arcdemo.conductor.config import ROOT, DemoConfig
+    cfg = DemoConfig(ROOT / "config" / "demo.yaml")
+    with TestClient(create_app(cfg)) as c:
+        cat = c.get("/api/layout_catalog").json()
+        assert cat["furniture"]["double_bed"]["model"] == "bedDouble.glb"
+        r = c.get(cat["assets_url"] + cat["furniture"]["double_bed"]["model"])
+        assert r.status_code == 200 and r.content[:4] == b"glTF"

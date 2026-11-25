@@ -6,36 +6,78 @@ stage the wall names). Pure Python, no dependencies. See the backend's docstring
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import re
+from pathlib import Path
 from typing import Optional
 
-# Fixed sizes (w along the front, d front to back, h), metres. v3: the model does not choose sizes.
-FURNITURE: dict[str, tuple[float, float, float]] = {
-    "double_bed": (1.60, 2.00, 0.50), "single_bed": (0.90, 2.00, 0.50), "nightstand": (0.50, 0.40, 0.55),
-    "wardrobe": (1.20, 0.60, 2.00), "dresser": (1.20, 0.50, 0.80), "desk": (1.20, 0.60, 0.75),
-    "chair": (0.50, 0.50, 0.90), "armchair": (0.80, 0.80, 0.90), "sofa": (2.20, 0.90, 0.85),
-    "coffee_table": (1.20, 0.60, 0.45), "tv_stand": (1.50, 0.40, 0.50), "side_table": (0.50, 0.50, 0.55),
-    "bookshelf": (0.80, 0.30, 1.80), "reading_table": (1.60, 0.80, 0.75), "cabinet": (1.00, 0.45, 0.90),
-    "dining_table": (1.60, 0.90, 0.75), "dining_chair": (0.45, 0.50, 0.90),
-    "floor_lamp": (0.40, 0.40, 1.60), "plant": (0.40, 0.40, 1.00),
-}
-# Placed against a wall (wall=… at=…); everything else is free-standing (x=… y=… facing=…).
-WALL_PIECES = {"double_bed", "single_bed", "nightstand", "wardrobe", "dresser", "desk", "sofa", "tv_stand",
-               "bookshelf", "cabinet"}
-ROOMS: dict[str, list[str]] = {   # vocabulary per room type, in a sensible placement order (mock uses it)
-    "bedroom": ["double_bed", "nightstand", "nightstand", "wardrobe", "dresser", "desk", "chair",
-                "armchair", "bookshelf", "floor_lamp", "plant", "single_bed", "tv_stand"],
-    "living_room": ["sofa", "coffee_table", "tv_stand", "armchair", "armchair", "side_table", "bookshelf",
-                    "floor_lamp", "plant", "cabinet", "dining_table", "dining_chair", "dining_chair"],
-    "library": ["bookshelf", "bookshelf", "bookshelf", "reading_table", "chair", "chair", "armchair",
-                "side_table", "floor_lamp", "sofa", "desk", "cabinet", "plant"],
-    # Used by the worked examples: room types that are NOT on stage, so there is nothing to copy
-    # (with a same-type example, the 4B model reproduced the bedroom example line for line).
-    "study": ["desk", "chair", "bookshelf", "bookshelf", "armchair", "floor_lamp", "cabinet", "plant",
-              "side_table", "sofa"],
-    "dining_room": ["dining_table", "dining_chair", "dining_chair", "cabinet", "dresser", "bookshelf",
-                    "side_table", "floor_lamp", "plant", "tv_stand"],
-}
+ROOT = Path(__file__).resolve().parents[1]                  # demo/
+DEFAULT_CATALOG = "data/layout/furniture.json"              # demo.yaml / worker config key: layout_catalog
+
+# Filled from the furniture catalogue (data/layout/furniture.json) by load_catalog(), never written here.
+# Updated in place, so modules that imported these names see the loaded catalogue.
+FURNITURE: dict[str, tuple[float, float, float]] = {}   # fixed size (w along the front, d, h), metres
+WALL_PIECES: set[str] = set()                            # placed against a wall (wall=… at=…); others free
+ROOMS: dict[str, list[str]] = {}                         # vocabulary per room type, in placement order
+CATALOG: dict = {}                                       # the whole document, as loaded (the stage draws from it)
+
+
+def _resolve(path: Optional[str | Path]) -> Path:
+    p = Path(path or DEFAULT_CATALOG)
+    return p if p.is_absolute() else ROOT / p
+
+
+def load_catalog(path: Optional[str | Path] = None, check_models: bool = False) -> dict:
+    """Read the furniture catalogue and make it the one in use. Raises ValueError naming every problem,
+    so a bad catalogue stops the conductor / worker at startup instead of one room on stage.
+    check_models: also require every model file in assets_dir (the conductor serves them; a worker
+    needs only sizes and room lists)."""
+    p = _resolve(path)
+    try:
+        doc = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        raise ValueError(f"furniture catalogue {p}: {e}") from e
+    furn, rooms, errors = doc.get("furniture") or {}, doc.get("rooms") or {}, []
+    for cls, f in furn.items():
+        size = f.get("size")
+        if not (isinstance(size, list) and len(size) == 3 and all(isinstance(v, (int, float)) and v > 0 for v in size)):
+            errors.append(f"{cls}: size must be [w, d, h], three positive numbers in metres")
+        if f.get("place") not in ("wall", "free"):
+            errors.append(f"{cls}: place must be 'wall' or 'free'")
+        if not re.fullmatch(r"[a-z_]+", cls):
+            errors.append(f"{cls}: class names are lower case letters and _ (the model writes them)")
+    for room, vocab in rooms.items():
+        errors += [f"room {room}: '{c}' is not in furniture" for c in vocab if c not in furn]
+    for ex, reply in globals().get("EXAMPLES", []):     # the prompt's worked examples must stay valid
+        if ex["room_type"] not in rooms:
+            errors.append(f"rooms: needs '{ex['room_type']}' (used by a worked example in the prompt)")
+        else:
+            errors += [f"room {ex['room_type']}: needs '{c}' (used by a worked example in the prompt)"
+                       for c in dict.fromkeys(ln.split()[0] for ln in reply.splitlines()) if c not in rooms[ex["room_type"]]]
+    if check_models:
+        assets = _resolve(doc.get("assets_dir", ""))
+        for cls, f in furn.items():
+            for m in [f.get("model")] + [pr.get("model") for pr in f.get("props") or []]:
+                if not m:
+                    errors.append(f"{cls}: no model file")
+                elif not (assets / m).is_file():
+                    errors.append(f"{cls}: model file {assets / m} not found")
+    if not furn or not rooms:
+        errors.append("needs both 'furniture' and 'rooms'")
+    if errors:
+        raise ValueError(f"furniture catalogue {p} is invalid:\n  " + "\n  ".join(dict.fromkeys(errors)))
+    FURNITURE.clear()
+    FURNITURE.update({c: tuple(float(v) for v in f["size"]) for c, f in furn.items()})
+    WALL_PIECES.clear()
+    WALL_PIECES.update(c for c, f in furn.items() if f["place"] == "wall")
+    ROOMS.clear()
+    ROOMS.update({r: list(v) for r, v in rooms.items()})
+    CATALOG.clear()
+    CATALOG.update(doc, path=str(p), sha=hashlib.sha1(p.read_bytes()).hexdigest()[:12])
+    return CATALOG
+
+
 FACING = {"north": 0, "east": 90, "south": 180, "west": 270}
 DOOR_CLEARANCE = 0.8        # metres kept free in front of the door
 OVERLAP_SHARE = 0.10        # overlap above this share of the smaller footprint is flagged
@@ -89,6 +131,8 @@ EXAMPLES = [
      "floor_lamp x=4.80 y=4.20 facing=south\n"
      "plant x=0.30 y=4.30 facing=south\n"),
 ]
+
+load_catalog()     # the default document; the conductor and worker reload it from their config's layout_catalog
 
 WALL_LINE = re.compile(r"^\s*([a-z_]+)\s+wall=([a-z]+\d*)\s+at=(-?\d+(?:\.\d+)?)\s*$")
 FREE_LINE = re.compile(r"^\s*([a-z_]+)\s+x=(-?\d+(?:\.\d+)?)\s+y=(-?\d+(?:\.\d+)?)\s+facing=(north|east|south|west)\s*$")

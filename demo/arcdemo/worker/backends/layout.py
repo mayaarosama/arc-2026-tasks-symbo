@@ -10,7 +10,8 @@ two forms (prompt v3, "wall-anchored"):
 Why: the first two prompt versions asked for raw centre coordinates and facing for everything, and
 a 4B model could not do that arithmetic (0 and 1 of 9 wall pieces actually against a wall; see
 docs/Task 8 — Layout model review.md). Now the model decides *what goes where*; the geometry of
-"against that wall" is computed. Sizes are fixed per object type (FURNITURE).
+"against that wall" is computed. Sizes are fixed per object type, read from the furniture catalogue
+(data/layout/furniture.json; worker config key layout_catalog).
 
 Each line is parsed the moment its newline arrives and timestamped on the job clock, so the stage
 (and a replay) shows the room furnishing itself in the model's own order.
@@ -44,7 +45,7 @@ from contextlib import closing
 from typing import Callable, Iterator, Optional
 
 from ...layout_prompt import (  # noqa: F401 — re-exported: tests and tools use layout.<name>
-    DOOR_CLEARANCE, EXAMPLES, FACING, FURNITURE, MUST_HAVE_COST, OVERLAP_SHARE, PROMPT_VERSION, REMOVE_COST,
+    CATALOG, DOOR_CLEARANCE, EXAMPLES, FACING, FURNITURE, MUST_HAVE_COST, OVERLAP_SHARE, PROMPT_VERSION, REMOVE_COST,
     ROOMS, SYSTEM, WALL_PIECES,
     WALL_TOLERANCE, check, continue_messages, css_grammar, css_line, layoutgpt_messages, parse_css, describe_room, edit_grammar, footprint, grammar, line_of, measure,
     messages, parse_edit, parse_line, problem_cost, repair_grammar, repair_messages, review_messages, room_cost,
@@ -283,7 +284,8 @@ class LayoutBackend(Backend):
     def describe(self, req: JobRequest) -> dict:
         d = {"streams": req.streams, "max_tokens": req.max_tokens, "temperature": req.temperature,
              "room_type": req.room_type, "max_objects": req.max_objects, "quant": self.spec.get("file", ""),
-             "prompt": "layoutgpt" if req.layout_prompt == "layoutgpt" else PROMPT_VERSION}
+             "prompt": "layoutgpt" if req.layout_prompt == "layoutgpt" else PROMPT_VERSION,
+             "catalog": CATALOG.get("sha")}      # which furniture catalogue the prompt was built from
         if req.repairs or req.review_rounds:    # self-correction: disclosed in every run record
             d.update(repairs=req.repairs, review_rounds=req.review_rounds)
         return d

@@ -61,6 +61,9 @@ inputs:
   music: data/music/stage_inputs.json
   llm: data/llm/stage_prompts.json
   layout: data/layout/stage_rooms.json
+# Task 8 furniture catalogue: what the layout model may place (sizes, wall/free, per-room lists) and the
+# model files the 3D stage draws them with. Workers read the same file (worker config key layout_catalog).
+layout_catalog: data/layout/furniture.json
 
 # ------------------------------------------------------------------------------------------
 # Settings matrix. "all" applies to every machine; a machine key overrides it.

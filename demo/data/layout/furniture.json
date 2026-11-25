@@ -1,0 +1,53 @@
+{
+  "_about": [
+    "Task 8 furniture catalogue: the one place that says what the layout model may place and how the stage draws it.",
+    "Read by the worker (prompt, grammar, room checks: arcdemo/layout_prompt.py) and by the conductor, which serves it",
+    "to the 3D view (/api/layout_catalog) and its model files from assets_dir (/layout-assets/).",
+    "size: [width along the front, depth front to back, height] in metres; the model never chooses sizes.",
+    "place: wall = back against a wall (wall=... at=...), free = anywhere on the floor (x=... y=... facing=...).",
+    "model: a .glb file in assets_dir, fitted to size. props: small models set on top (size: the box they are fitted into;",
+    "at: [along the front, towards the back] in metres from the centre). rug: [w, d] floor patch under the object.",
+    "rooms: per room type, the allowed objects in a sensible placement order (the mock uses the order).",
+    "study and dining_room are used only by the prompt's worked examples (room types not on stage).",
+    "Changing a size or a room list changes the prompt: re-check the room results (docs/Task 8 - Layout model review.md)."
+  ],
+  "assets_dir": "arcdemo/conductor/static/assets/furniture",
+  "furniture": {
+    "double_bed":    {"size": [1.60, 2.00, 0.50], "place": "wall", "model": "bedDouble.glb"},
+    "single_bed":    {"size": [0.90, 2.00, 0.50], "place": "wall", "model": "bedSingle.glb"},
+    "nightstand":    {"size": [0.50, 0.40, 0.55], "place": "wall", "model": "cabinetBedDrawerTable.glb",
+                      "props": [{"model": "lampRoundTable.glb", "size": [0.22, 0.22, 0.36], "at": [0.08, 0.05]}]},
+    "wardrobe":      {"size": [1.20, 0.60, 2.00], "place": "wall", "model": "bookcaseClosedDoors.glb"},
+    "dresser":       {"size": [1.20, 0.50, 0.80], "place": "wall", "model": "cabinetBedDrawer.glb"},
+    "desk":          {"size": [1.20, 0.60, 0.75], "place": "wall", "model": "desk.glb",
+                      "props": [{"model": "computerScreen.glb", "size": [0.50, 0.16, 0.38], "at": [0, 0.14]}]},
+    "chair":         {"size": [0.50, 0.50, 0.90], "place": "free", "model": "chairDesk.glb"},
+    "armchair":      {"size": [0.80, 0.80, 0.90], "place": "free", "model": "loungeChair.glb"},
+    "sofa":          {"size": [2.20, 0.90, 0.85], "place": "wall", "model": "loungeSofa.glb"},
+    "coffee_table":  {"size": [1.20, 0.60, 0.45], "place": "free", "model": "tableCoffee.glb", "rug": [2.0, 1.4]},
+    "tv_stand":      {"size": [1.50, 0.40, 0.50], "place": "wall", "model": "cabinetTelevision.glb",
+                      "props": [{"model": "televisionModern.glb", "size": [1.10, 0.18, 0.62], "at": [0, 0.08]}]},
+    "side_table":    {"size": [0.50, 0.50, 0.55], "place": "free", "model": "sideTable.glb"},
+    "bookshelf":     {"size": [0.80, 0.30, 1.80], "place": "wall", "model": "bookcaseOpen.glb"},
+    "reading_table": {"size": [1.60, 0.80, 0.75], "place": "free", "model": "table.glb",
+                      "props": [{"model": "lampRoundTable.glb", "size": [0.24, 0.24, 0.40], "at": [0.55, 0.12]},
+                                {"model": "books.glb", "size": [0.30, 0.20, 0.10], "at": [-0.35, 0]}]},
+    "cabinet":       {"size": [1.00, 0.45, 0.90], "place": "wall", "model": "cabinetTelevisionDoors.glb"},
+    "dining_table":  {"size": [1.60, 0.90, 0.75], "place": "free", "model": "tableCloth.glb"},
+    "dining_chair":  {"size": [0.45, 0.50, 0.90], "place": "free", "model": "chairModernCushion.glb"},
+    "floor_lamp":    {"size": [0.40, 0.40, 1.60], "place": "free", "model": "lampRoundFloor.glb"},
+    "plant":         {"size": [0.40, 0.40, 1.00], "place": "free", "model": "pottedPlant.glb"}
+  },
+  "rooms": {
+    "bedroom":     ["double_bed", "nightstand", "nightstand", "wardrobe", "dresser", "desk", "chair",
+                    "armchair", "bookshelf", "floor_lamp", "plant", "single_bed", "tv_stand"],
+    "living_room": ["sofa", "coffee_table", "tv_stand", "armchair", "armchair", "side_table", "bookshelf",
+                    "floor_lamp", "plant", "cabinet", "dining_table", "dining_chair", "dining_chair"],
+    "library":     ["bookshelf", "bookshelf", "bookshelf", "reading_table", "chair", "chair", "armchair",
+                    "side_table", "floor_lamp", "sofa", "desk", "cabinet", "plant"],
+    "study":       ["desk", "chair", "bookshelf", "bookshelf", "armchair", "floor_lamp", "cabinet", "plant",
+                    "side_table", "sofa"],
+    "dining_room": ["dining_table", "dining_chair", "dining_chair", "cabinet", "dresser", "bookshelf",
+                    "side_table", "floor_lamp", "plant", "tv_stand"]
+  }
+}
