@@ -4,7 +4,6 @@ LayoutServer code talks to it over HTTP."""
 import json
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import httpx
 import pytest
@@ -14,59 +13,6 @@ from arcdemo.worker.backends.base import JobContext
 from arcdemo.worker.backends.layout import LayoutServer
 from arcdemo.worker.backends.llm import LlamaServer
 from arcdemo.worker.metrics import Clock
-
-RELEASE = threading.Event()        # set at teardown: lets stalled handler threads exit
-
-
-class FakeLlama(BaseHTTPRequestHandler):
-    """mode: tokens_then_stall (3 tokens, then nothing) | stall_before_headers | error."""
-    mode = "tokens_then_stall"
-
-    def log_message(self, *a):
-        pass
-
-    def do_POST(self):
-        self.rfile.read(int(self.headers.get("Content-Length", 0)))
-        if self.mode == "error":
-            self.send_response(500)
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-            return
-        if self.mode == "stall_before_headers":     # still reading the prompt: nothing sent yet
-            RELEASE.wait(30)
-            return
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.end_headers()
-        try:
-            for word in ("one", " two", " three"):
-                chunk = {"choices": [{"delta": {"content": word}}]}
-                self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
-                self.wfile.flush()
-            RELEASE.wait(30)                       # then the server goes quiet
-        except OSError:                            # the client closed the stream: what we want
-            pass
-
-
-@pytest.fixture()
-def fake_server():
-    RELEASE.clear()
-    servers = []
-
-    def start(mode: str) -> str:
-        handler = type("H", (FakeLlama,), {"mode": mode})
-        srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-        srv.daemon_threads = True
-        threading.Thread(target=srv.serve_forever, daemon=True).start()
-        servers.append(srv)
-        return f"http://127.0.0.1:{srv.server_address[1]}"
-
-    yield start
-    RELEASE.set()
-    for srv in servers:
-        srv.shutdown()
-        srv.server_close()
-
 
 def backend(cls, url: str, tmp_path):
     b = cls("qwen35-4b", {"task": "llm", "file": "*.gguf"}, {"results_dir": str(tmp_path)}, ["cpu"])

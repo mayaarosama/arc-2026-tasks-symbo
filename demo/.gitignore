@@ -11,3 +11,4 @@ third_party/
 hf-cache/
 weights/
 config.txt
+.pytest-overlay/

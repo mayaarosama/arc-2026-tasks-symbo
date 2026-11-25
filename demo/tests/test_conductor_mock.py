@@ -2,15 +2,11 @@
 a dead worker must never hang a round — the cell falls back and says why."""
 import asyncio
 import json
-import socket
-import subprocess
-import sys
 import time
 from pathlib import Path
 
 import httpx
 import pytest
-import yaml
 
 from arcdemo.conductor.config import DemoConfig
 from arcdemo.conductor.core import Conductor
@@ -18,44 +14,6 @@ from arcdemo.conductor.core import Conductor
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-@pytest.fixture()
-def stack(tmp_path, request):
-    procs, machines = {}, []
-    speeds = getattr(request, "param", {"dgx": 0.01, "workstation": 0.02, "cpu": 0.05})
-    for mid, speed in speeds.items():
-        wcfg = yaml.safe_load((ROOT / f"config/worker-mock-{mid}.yaml").read_text())
-        wcfg.update(mock_speed=speed, results_dir=str(tmp_path / f"results-{mid}"))
-        wpath = tmp_path / f"worker-{mid}.yaml"
-        wpath.write_text(yaml.safe_dump(wcfg))
-        port = free_port()
-        procs[mid] = subprocess.Popen([sys.executable, "-m", "arcdemo.worker", "--config", str(wpath),
-                                       "--task", "t2i,i23d,music,llm,layout", "--host", "127.0.0.1", "--port", str(port)],
-                                      cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        url = f"http://127.0.0.1:{port}"
-        machines.append({"id": mid, "label": mid, "workers": {"t2i": url, "i23d": url, "music": url, "llm": url, "layout": url},
-                         "show_full_recording": mid == "cpu"})
-    for m in machines:                                   # wait until every worker answers
-        end = time.time() + 30
-        while True:
-            try:
-                httpx.get(m["workers"]["t2i"] + "/health", timeout=1).raise_for_status()
-                break
-            except httpx.HTTPError:
-                assert time.time() < end, f"{m['id']} worker did not start"
-                time.sleep(0.3)
-    cfg_path = tmp_path / "demo-test.yaml"
-    cfg_path.write_text(yaml.safe_dump({"extends": str(ROOT / "config/demo.yaml"), "machines": machines,
-                                        "session_dir": str(tmp_path / "session"),
-                                        "replay_dir": str(tmp_path / "replay")}))
-    yield DemoConfig(cfg_path), procs
-    for p in procs.values():
-        p.terminate()
 
 
 async def one_round(cfg: DemoConfig, segment: str, input_id: str) -> dict:
