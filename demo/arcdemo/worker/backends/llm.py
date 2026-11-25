@@ -132,6 +132,20 @@ class StreamAborted(Exception):
     """Stop / bell while llama-server had not answered yet: the request was abandoned."""
 
 
+def _hang_up(resp) -> None:
+    """Shut down a streaming response's socket, waking the stream thread blocked reading it.
+    close() alone is not enough on Linux: closing a socket does not interrupt a recv() another
+    thread is blocked in, so a stalled stream would wait out the 120 s read timeout. (On Windows
+    closesocket does interrupt it.) shutdown() makes that recv return at once on both."""
+    stream = (getattr(resp, "extensions", None) or {}).get("network_stream")
+    sock = stream.get_extra_info("socket") if stream is not None else None
+    if sock is not None:
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:            # already closed or never connected
+            pass
+
+
 class _Pending:
     """A request llama-server has not answered yet (still reading the prompt, or no free slot).
     close() abandons it; see LlamaServer._open."""
@@ -153,6 +167,7 @@ class LlamaServer(LlmBackend):
     def _abort_streams(self) -> None:
         for item in list(self._live):
             try:
+                _hang_up(item)
                 item.close()
             except Exception:  # noqa: BLE001 — closing is best effort
                 pass
