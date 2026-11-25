@@ -9,40 +9,27 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
-const ASSETS = new URL("./assets/furniture/", import.meta.url);
 const WALL_H = 1.1, WALL_T = 0.08, DROP_MS = 550, MOVE_MS = 700;   // a fixed object slides over MOVE_MS
 const BAD = 0xff5d5d;
 
-// Furniture type -> model file, plus small props set on top ("at" = [along the front, towards the
-// back] in metres from the centre; "size" = the box the prop is fitted into, w x d x h).
-const MODELS = {
-  double_bed: { file: "bedDouble" },
-  single_bed: { file: "bedSingle" },
-  nightstand: { file: "cabinetBedDrawerTable", props: [{ file: "lampRoundTable", size: [0.22, 0.22, 0.36], at: [0.08, 0.05] }] },
-  wardrobe: { file: "bookcaseClosedDoors" },
-  dresser: { file: "cabinetBedDrawer" },
-  desk: { file: "desk", props: [{ file: "computerScreen", size: [0.5, 0.16, 0.38], at: [0, 0.14] }] },
-  chair: { file: "chairDesk" },
-  armchair: { file: "loungeChair" },
-  sofa: { file: "loungeSofa" },
-  coffee_table: { file: "tableCoffee", rug: [2.0, 1.4] },
-  tv_stand: { file: "cabinetTelevision", props: [{ file: "televisionModern", size: [1.1, 0.18, 0.62], at: [0, 0.08] }] },
-  side_table: { file: "sideTable" },
-  bookshelf: { file: "bookcaseOpen" },
-  reading_table: { file: "table", props: [{ file: "lampRoundTable", size: [0.24, 0.24, 0.4], at: [0.55, 0.12] },
-                                          { file: "books", size: [0.3, 0.2, 0.1], at: [-0.35, 0] }] },
-  cabinet: { file: "cabinetTelevisionDoors" },
-  dining_table: { file: "tableCloth" },
-  dining_chair: { file: "chairModernCushion" },
-  floor_lamp: { file: "lampRoundFloor" },
-  plant: { file: "pottedPlant" },
-};
+// Furniture type -> model file, props set on top and rug, from the furniture catalogue
+// (data/layout/furniture.json, served by the conductor; the same document the model's prompt is built
+// from). Props: "at" = [along the front, towards the back] in metres from the centre; "size" = the box
+// the prop is fitted into, w x d x h.
+let MODELS = {}, ASSETS = new URL("/layout-assets/", location.href);
+try {
+  const cat = await (await fetch("/api/layout_catalog")).json();
+  ASSETS = new URL(cat.assets_url, location.href);
+  MODELS = cat.furniture;
+} catch (e) {
+  console.error("layout3d: furniture catalogue not loaded; every object is drawn as a box", e);
+}
 
 const loader = new GLTFLoader();
 const cache = new Map();          // file -> Promise<normalised Object3D>: centred, sitting on y = 0
 function model(file) {
   if (!cache.has(file)) {
-    cache.set(file, loader.loadAsync(new URL(file + ".glb", ASSETS).href).then((g) => {
+    cache.set(file, loader.loadAsync(new URL(file, ASSETS).href).then((g) => {
       const root = g.scene;
       root.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
       const box = new THREE.Box3().setFromObject(root);
@@ -56,7 +43,7 @@ function model(file) {
   }
   return cache.get(file);
 }
-Object.values(MODELS).forEach((m) => { model(m.file); (m.props || []).forEach((p) => model(p.file)); });
+Object.values(MODELS).forEach((m) => { model(m.model); (m.props || []).forEach((p) => model(p.model)); });
 
 function fitted(src, w, d, h, exact) {          // exact: stretch to w x d x h; else fit inside, keep shape
   const o = src.clone(true), s = src.userData.size;
@@ -68,15 +55,16 @@ function fitted(src, w, d, h, exact) {          // exact: stretch to w x d x h; 
 async function furniture(o) {
   const spec = MODELS[o.cls];
   const g = new THREE.Group();
-  if (!spec) {                                   // unknown type: a plain box, never nothing
+  if (!spec) {                                   // not in the catalogue: a plain box, never nothing
+    console.warn(`layout3d: '${o.cls}' is not in the furniture catalogue; drawn as a box`);
     const m = new THREE.Mesh(new THREE.BoxGeometry(o.w, o.h, o.d), new THREE.MeshStandardMaterial({ color: 0x8899aa }));
     m.position.y = o.h / 2;
     g.add(m);
     return g;
   }
-  g.add(fitted(await model(spec.file), o.w, o.d, o.h, true));
+  g.add(fitted(await model(spec.model), o.w, o.d, o.h, true));
   for (const p of spec.props || []) {
-    const prop = fitted(await model(p.file), p.size[0], p.size[1], p.size[2], false);
+    const prop = fitted(await model(p.model), p.size[0], p.size[1], p.size[2], false);
     prop.position.set(p.at[0], o.h, -p.at[1]);   // on top; "towards the back" is -Z in the model frame
     g.add(prop);
   }

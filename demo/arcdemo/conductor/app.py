@@ -77,6 +77,17 @@ def create_app(cfg: DemoConfig) -> FastAPI:
     app.mount("/media", StaticFiles(directory=cfg.session_dir), name="media")
     app.mount("/replay-media", StaticFiles(directory=cfg.replay_dir), name="replay")
     app.mount("/media-input/data", StaticFiles(directory=ROOT / "data"), name="inputs")
+    if cfg.layout_catalog:   # Task 8 furniture models, from the catalogue's assets_dir
+        app.mount("/layout-assets", StaticFiles(directory=ROOT / cfg.layout_catalog["assets_dir"]), name="layout-assets")
+
+    @app.get("/api/layout_catalog")
+    def layout_catalog() -> dict:
+        """The furniture catalogue (data/layout/furniture.json or demo.yaml layout_catalog) for the 3D view:
+        each class's model file, props and rug, with the URL its files are served from."""
+        if not cfg.layout_catalog:
+            raise HTTPException(404, "no layout task in this config")
+        c = cfg.layout_catalog
+        return {"assets_url": "/layout-assets/", "sha": c["sha"], "furniture": c["furniture"], "rooms": c["rooms"]}
 
     @app.middleware("http")
     async def revalidate_pages(request, call_next):

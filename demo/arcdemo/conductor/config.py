@@ -44,6 +44,12 @@ class DemoConfig:
         self.choices: dict[str, dict[str, dict]] = {
             task: {k: dict(v or {}) for k, v in (models or {}).items()}
             for task, models in (self.raw.get("model_choices") or {}).items()}
+        # The Task 8 furniture catalogue: what the layout model may place, and the model files the stage
+        # draws them with (served from its assets_dir). Every model file must exist.
+        self.layout_catalog: dict = {}
+        if "layout" in self.inputs:
+            from ..layout_prompt import DEFAULT_CATALOG, load_catalog
+            self.layout_catalog = load_catalog(self.raw.get("layout_catalog", DEFAULT_CATALOG), check_models=True)
         self._validate()
 
     def _validate(self) -> None:
@@ -78,6 +84,11 @@ class DemoConfig:
                 bad = set(extra) - job_fields - {"mode", "prepare"} | ({"model"} & set(extra))
                 if bad:
                     errors.append(f"{where}: unknown keys {sorted(bad)}")
+        rooms = self.layout_catalog.get("rooms", {})
+        for item in self.inputs.get("layout", []):
+            if item.get("room_type") not in rooms:
+                errors.append(f"layout input {item.get('id')}: room_type '{item.get('room_type')}' is not in "
+                              f"the furniture catalogue (known: {', '.join(rooms)})")
         if errors:   # dict.fromkeys: segments sharing a task/protocol would repeat the same error
             raise ValueError(f"{self.path.name} is invalid:\n  " + "\n  ".join(dict.fromkeys(errors)))
 
