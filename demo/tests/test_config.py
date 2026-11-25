@@ -13,7 +13,7 @@ def test_shipped_configs_are_valid():
     DemoConfig(ROOT / "config/demo.yaml")
     DemoConfig(ROOT / "config/demo-mock.yaml")
     DemoConfig(ROOT / "config/demo-full.yaml")
-    DemoConfig(ROOT / "config/demo-local.yaml")
+    DemoConfig(ROOT / "config/demo-workstation.yaml")
 
 
 def test_typo_in_settings_is_reported(tmp_path):

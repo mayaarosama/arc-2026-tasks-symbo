@@ -24,7 +24,7 @@
 | Settings | Show settings for seg8 "Furnish the room": greedy decoding (temperature 0), one room at a time, up to 400 tokens |
 | Rooms | `lay-01` bedroom 3.8 × 3.4 m (8 objects); `lay-02` L-shaped living room (10); `lay-03` library with an angled wall, our own plan (10) |
 | Prompt warm-up | The shared part of the prompt (rules and two worked examples) is read once at load, off the clock |
-| Tool | `scripts/sample_layout.py --config config/worker-local-cpu.yaml` |
+| Tool | `scripts/sample_layout.py --config config/worker-local-cpu.yaml` (laptop configs archived in `/home/master/mayar/archive/arc-2026-demo-laptop/`) |
 
 ### The four prompt versions
 

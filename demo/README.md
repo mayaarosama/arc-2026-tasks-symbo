@@ -281,13 +281,16 @@ Assets: the 3D furniture is the Kenney Furniture Kit (CC0, 25 `.glb` files) in
 `arcdemo/conductor/static/assets/furniture/`, served by the conductor, so there is nothing to download.
 The rooms and the prompt's worked examples are in `data/layout/` (`stage_rooms.json`, `exemplars.json`).
 
-**On a laptop with the real model** (CPU; uses the Task 4 weights and llama.cpp, see 1b):
+**On this workstation with the real model** (uses the Task 4 weights and llama.cpp, see 1b):
 
 ```bash
-python -m arcdemo.worker --config config/worker-local-cpu.yaml --task layout --port 9242   # llm env
-python -m arcdemo.conductor --config config/demo-local-cpu.yaml
-# operator: http://127.0.0.1:8000/operator#seg=local-layout-q&input=lay-02    stage: http://127.0.0.1:8000/stage
+python -m arcdemo.worker --config config/worker-workstation.yaml --task layout --port 8105   # llm env
+python -m arcdemo.conductor --config config/demo-workstation.yaml
+# operator: http://127.0.0.1:8000/operator    stage: http://127.0.0.1:8000/stage
 ```
+
+The Windows dev-laptop configs used for the Task 8 review (`demo-local*.yaml`, `worker-local-*.yaml`,
+`replay-local/`, `rehearse_local_gpu.sh`) are archived in `/home/master/mayar/archive/arc-2026-demo-laptop/`.
 
 **At the show:** each machine runs the layout worker on port 8105 (section 2, `--task layout`, llm
 env), and the parts are *Furnish the room* (seg8) and *Rooms in a minute* (seg9).

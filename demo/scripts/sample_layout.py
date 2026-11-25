@@ -1,7 +1,7 @@
 """Task 8 review run: furnish the stage rooms with the real model and save everything for review.
 
-    python scripts/sample_layout.py --config config/worker-local-cpu.yaml
-    python scripts/sample_layout.py --config config/worker-local-cpu.yaml --rooms lay-01,lay-03
+    python scripts/sample_layout.py --config config/worker-workstation.yaml
+    python scripts/sample_layout.py --config config/worker-workstation.yaml --rooms lay-01,lay-03
 
 Runs the real worker code path in-process with networking OFF and the show settings
 (demo.yaml layout/iso_quality: greedy, one room at a time). Writes one folder,
@@ -37,7 +37,7 @@ TERMINAL = ("ok", "budget_exceeded", "out_of_memory", "error", "cancelled")
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", required=True, help="worker config, e.g. config/worker-local-cpu.yaml")
+    ap.add_argument("--config", required=True, help="worker config, e.g. config/worker-workstation.yaml")
     ap.add_argument("--demo", default="config/demo.yaml", help="where the settings and rooms come from")
     ap.add_argument("--protocol", default="iso_quality")
     ap.add_argument("--rooms", help="comma list of input ids (default: all)")

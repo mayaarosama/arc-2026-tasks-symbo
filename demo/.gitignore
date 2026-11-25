@@ -12,3 +12,9 @@ hf-cache/
 weights/
 config.txt
 .pytest-overlay/
+# Windows dev-laptop files, archived outside the repo (/home/master/mayar/archive/arc-2026-demo-laptop)
+scripts/rehearse_local_gpu.sh
+config/demo-local.yaml
+config/demo-local-cpu.yaml
+config/worker-local-*.yaml
+replay-local/
