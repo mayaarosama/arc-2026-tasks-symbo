@@ -23,7 +23,11 @@ from tests.helpers import ALL_TASKS, CONFIG, MOCK_SPEEDS, RELEASE, ROOT, FakeLla
 
 
 def pytest_collection_modifyitems(config, items):
-    """`gpu` tests run only when asked for with -m gpu (they load real weights)."""
+    """Tests using the `stack` fixture (worker processes) are `slow`; `gpu` tests run only when asked
+    for with -m gpu (they load real weights)."""
+    for item in items:
+        if "stack" in getattr(item, "fixturenames", ()):
+            item.add_marker(pytest.mark.slow)
     if "gpu" in (config.getoption("-m") or ""):
         return
     skip = pytest.mark.skip(reason="loads real models: run with -m gpu")

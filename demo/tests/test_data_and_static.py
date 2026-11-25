@@ -183,3 +183,22 @@ def test_layout_mock_rooms_are_clean():
         assert o is not None and not check(o, placed, spec)
         placed.append(o)
     assert placed
+
+
+# ------------------------------------------------------------------ documentation links
+DOCS = sorted(p for p in ROOT.rglob("*.md")
+              if not any(part.startswith((".venv", "third_party", "hf-cache", ".pytest")) for part in p.parts))
+
+
+@pytest.mark.parametrize("doc", DOCS, ids=lambda p: str(p.relative_to(ROOT)))
+def test_relative_markdown_links_resolve(doc):
+    """[text](path) links to files in the repo must exist (anchors and web links are not checked)."""
+    text = doc.read_text(encoding="utf-8")
+    broken = []
+    for target in re.findall(r"\]\(([^)\s]+)\)", text):
+        if target.startswith(("http://", "https://", "#", "mailto:")):
+            continue
+        path = target.split("#")[0].replace("%20", " ")
+        if path and not (doc.parent / path).exists():
+            broken.append(target)
+    assert not broken, f"{doc.relative_to(ROOT)}: broken links {broken}"
