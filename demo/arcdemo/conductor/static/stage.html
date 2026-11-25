@@ -5,6 +5,11 @@
 <title>ARC · Stage</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="/static/stage.css">
+<!-- The import map must come before every module script, model-viewer's included: once a module has
+     started loading, a later map is ignored, "three" cannot be resolved, layout3d.js fails, and Task 8
+     falls back to the 2D canvas view with no furniture models. -->
+<script type="importmap">{"imports": {"three": "/static/vendor/three/three.module.min.js",
+                                      "three/addons/": "/static/vendor/three/addons/"}}</script>
 <script type="module" src="/static/vendor/model-viewer.min.js"></script>
 <script src="/static/common.js"></script>
 </head>
@@ -43,8 +48,6 @@
 
   <section id="v-blank" class="view" hidden></section>
 
-<script type="importmap">{"imports": {"three": "/static/vendor/three/three.module.min.js",
-                                      "three/addons/": "/static/vendor/three/addons/"}}</script>
 <script src="/static/layout.js"></script>
 <script type="module" src="/static/layout3d.js"></script>
 <script src="/static/stage.js"></script>
