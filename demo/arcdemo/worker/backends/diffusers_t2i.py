@@ -17,6 +17,13 @@ from __future__ import annotations
 
 import threading
 
+try:                     # the t2i venv only: the worker imports this module when a t2i model loads
+    import torch
+    from diffusers import AutoPipelineForText2Image, StableDiffusion3Pipeline
+    from transformers import BitsAndBytesConfig, T5EncoderModel
+except ImportError:
+    torch = AutoPipelineForText2Image = StableDiffusion3Pipeline = BitsAndBytesConfig = T5EncoderModel = None
+
 from ...schemas import JobRequest
 from .base import Backend, JobContext, resolve_dtype
 
@@ -29,9 +36,8 @@ class DiffusersT2I(Backend):
     task = "t2i"
 
     def load(self) -> None:
-        import torch
-        from diffusers import AutoPipelineForText2Image, StableDiffusion3Pipeline
-
+        if StableDiffusion3Pipeline is None:
+            raise ModuleNotFoundError("diffusers / torch are not installed in this venv (requirements/t2i.txt)")
         pipes = []
         self._dtypes: list[str] = []
         is_sd3 = "stable-diffusion-3" in self.repo
@@ -45,7 +51,6 @@ class DiffusersT2I(Backend):
                 elif t5 == "int8":
                     if not dev.startswith("cuda"):
                         raise RuntimeError("t5: int8 needs CUDA (bitsandbytes); use t5: none on CPU")
-                    from transformers import BitsAndBytesConfig, T5EncoderModel
                     kw["text_encoder_3"] = T5EncoderModel.from_pretrained(
                         self.repo, subfolder="text_encoder_3", torch_dtype=dtype,
                         quantization_config=BitsAndBytesConfig(load_in_8bit=True),
@@ -74,8 +79,6 @@ class DiffusersT2I(Backend):
         }
 
     def generate(self, req: JobRequest, ctx: JobContext) -> None:
-        import torch
-
         if not req.prompt:
             raise ValueError("t2i job without a prompt")
         n = max(1, req.batch)

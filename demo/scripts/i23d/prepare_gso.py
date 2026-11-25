@@ -26,6 +26,11 @@ import requests
 import trimesh
 from PIL import Image, ImageDraw
 
+try:                     # requirements/gso.txt, installed separately (only this script needs it)
+    import pyrender
+except ImportError:
+    pyrender = None
+
 ROOT = Path(__file__).resolve().parents[2]       # demo/
 DATA = ROOT / "data" / "i23d"
 FUEL = "https://fuel.gazebosim.org/1.0/GoogleResearch/models/{name}/1/{name}.zip"
@@ -68,8 +73,8 @@ def load_upright(folder: Path) -> trimesh.Trimesh:
 
 
 def render(mesh: trimesh.Trimesh) -> Image.Image:
-    import pyrender
-
+    if pyrender is None:
+        raise SystemExit("pyrender is not installed: pip install -r requirements/gso.txt")
     scene = pyrender.Scene(bg_color=[0, 0, 0, 0], ambient_light=[0.35, 0.35, 0.35])
     scene.add(pyrender.Mesh.from_trimesh(mesh, smooth=False))
     radius = float(np.linalg.norm(mesh.bounding_box.extents) / 2)

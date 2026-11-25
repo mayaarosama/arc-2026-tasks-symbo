@@ -8,6 +8,11 @@ from pathlib import Path
 
 import psutil
 
+try:                     # the t2i venv has it; without torch the bf16 check says "unknown"
+    import torch
+except ImportError:
+    torch = None
+
 ROOT = Path(__file__).resolve().parents[2]
 GB = 1024 ** 3
 
@@ -23,7 +28,8 @@ def main() -> None:
     print(f"ram           {ram.total / GB:.1f} GB total, {ram.available / GB:.1f} GB free now")
     print(f"disk          {disk.free / GB:.0f} GB free at {ROOT}")
     try:
-        import torch
+        if torch is None:
+            raise ModuleNotFoundError("No module named 'torch'")
         bf16 = bool(torch.ops.mkldnn._is_mkldnn_bf16_supported())   # oneDNN's own check (AVX512-BF16 / AMX)
         print(f"torch         {torch.__version__}, cpu capability {torch.backends.cpu.get_cpu_capability()}")
         print(f"bf16 on cpu   {'yes' if bf16 else 'no'}")

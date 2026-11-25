@@ -12,6 +12,7 @@ GGUF repos hold every quantisation: a model's `file` glob in models.yaml limits 
 """
 import argparse
 import sys
+import urllib.request
 from pathlib import Path
 
 from arcdemo.conductor.config import DemoConfig
@@ -96,7 +97,6 @@ CUTOUT_BYTES = 175_997_641
 
 
 def fetch_cutout(dry_run: bool = False) -> None:
-    import urllib.request
     dest = Path(__file__).resolve().parents[2] / "weights" / "u2net" / "u2net.onnx"
     print(f"cut-out model: {CUTOUT_URL} -> {dest}")
     if dest.is_file() and dest.stat().st_size == CUTOUT_BYTES:
@@ -122,7 +122,10 @@ def fetch(repo: str, ignore=None, allow=None) -> tuple[str, str]:
 
     Safe to re-run: files already in the cache are skipped and partial ones resume. If the Hub
     cannot be reached (no network, gated licence revoked) a repo already on disk is kept as is."""
+    # Deferred import: huggingface_hub reads HF_HUB_CACHE when it is imported, and importing arcdemo
+    # (above) is what sets it; a top-level import would be sorted above arcdemo's and use ~/.cache.
     from huggingface_hub import snapshot_download
+
     # Windows without symlink rights: huggingface_hub marks a new repo folder "symlinks OK" before
     # testing it, so parallel workers race the test and fail with WinError 1314. One worker avoids it.
     workers = 1 if sys.platform == "win32" else 8

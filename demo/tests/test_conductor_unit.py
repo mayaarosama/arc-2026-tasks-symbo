@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from PIL import Image, ImageDraw
 
 from arcdemo.conductor.app import create_app
-from arcdemo.conductor.config import DemoConfig
+from arcdemo.conductor.config import DemoConfig, _load_yaml
 from arcdemo.conductor.core import Conductor
 from arcdemo.conductor.tasks.i23d import add_upload
 from arcdemo.conductor.tasks.layout import layout_prompt_text, layout_summary, layout_view
@@ -38,7 +38,6 @@ def segment_of(cfg: DemoConfig, task: str) -> dict:
 def test_extends_is_a_shallow_merge(tmp_path):
     (tmp_path / "base.yaml").write_text(yaml.safe_dump({"a": {"x": 1}, "b": 2}))
     (tmp_path / "child.yaml").write_text(yaml.safe_dump({"extends": "base.yaml", "a": {"y": 3}}))
-    from arcdemo.conductor.config import _load_yaml
     assert _load_yaml(tmp_path / "child.yaml") == {"a": {"y": 3}, "b": 2}
 
 

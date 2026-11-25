@@ -61,6 +61,8 @@ def verify_cutout() -> int:
 
 
 def main() -> int:
+    if "huggingface_hub" in sys.modules:   # read HF_HUB_OFFLINE at its import: offline would not be enforced
+        sys.exit("huggingface_hub was imported before HF_HUB_OFFLINE was set: offline mode is not enforced")
     os.environ["HF_HUB_OFFLINE"] = "1"          # before any model library is imported: nothing may
     os.environ["TRANSFORMERS_OFFLINE"] = "1"    # touch the network (the backends import them lazily)
     ap = argparse.ArgumentParser()

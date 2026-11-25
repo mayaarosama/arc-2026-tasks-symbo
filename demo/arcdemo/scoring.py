@@ -18,6 +18,8 @@ Sanity checks in tests/test_scoring.py: truth vs itself after a random rotation 
 from __future__ import annotations
 
 import itertools
+import json
+import sys
 from dataclasses import asdict, dataclass
 
 import numpy as np
@@ -131,7 +133,4 @@ def score_files(pred_path: str, truth_path: str, n: int = 20000, seed: int = 0) 
 
 
 if __name__ == "__main__":
-    import json
-    import sys
-
     print(json.dumps(score_files(sys.argv[1], sys.argv[2]).as_dict(), indent=2))

@@ -4,6 +4,7 @@ torch or not. Real weights are exercised by test_gpu_real.py (-m gpu)."""
 from __future__ import annotations
 
 import contextlib
+import os
 import stat
 import sys
 import textwrap
@@ -12,11 +13,20 @@ import time
 import types
 from pathlib import Path
 
+import httpx
+import numpy as np
 import pytest
 from PIL import Image
 
 from arcdemo.schemas import JobRequest
-from tests.helpers import make_context
+from arcdemo.worker.backends import base, diffusers_t2i, llm, sf3d, stable_audio3
+from arcdemo.worker.backends.diffusers_t2i import DiffusersT2I
+from arcdemo.worker.backends.layout import LayoutServer
+from arcdemo.worker.backends.llm import LlamaServer
+from arcdemo.worker.backends.sf3d import StableFast3D
+from arcdemo.worker.backends.stable_audio3 import StableAudio3
+from arcdemo.worker.backends.trellis import Trellis1, Trellis2
+from tests.helpers import ROOT, FakeLlama, make_context
 
 
 # ------------------------------------------------------------------ a stand-in torch
@@ -43,8 +53,10 @@ def fake_torch() -> types.ModuleType:
 
 @pytest.fixture()
 def torch(monkeypatch):
+    """The stand-in torch, bound where the backends look it up (they import torch at the top)."""
     t = fake_torch()
-    monkeypatch.setitem(sys.modules, "torch", t)
+    for mod in (base, diffusers_t2i, sf3d, stable_audio3):
+        monkeypatch.setattr(mod, "torch", t)
     return t
 
 
@@ -80,13 +92,12 @@ class FakePipe:
 @pytest.fixture()
 def diffusers(monkeypatch, torch):
     FakePipe.calls = []
-    mod = types.SimpleNamespace(AutoPipelineForText2Image=FakePipe, StableDiffusion3Pipeline=FakePipe)
-    monkeypatch.setitem(sys.modules, "diffusers", mod)
+    monkeypatch.setattr(diffusers_t2i, "AutoPipelineForText2Image", FakePipe)
+    monkeypatch.setattr(diffusers_t2i, "StableDiffusion3Pipeline", FakePipe)
     return FakePipe
 
 
 def test_t2i_load_warms_up_each_device_and_drops_t5_when_asked(diffusers):
-    from arcdemo.worker.backends.diffusers_t2i import DiffusersT2I
     b = DiffusersT2I("sd35-medium-not5", {"repo": "stabilityai/stable-diffusion-3.5-medium", "t5": "none"},
                      {}, ["cpu", "cpu"])
     b.load()
@@ -98,14 +109,12 @@ def test_t2i_load_warms_up_each_device_and_drops_t5_when_asked(diffusers):
 
 
 def test_t2i_int8_t5_needs_cuda(diffusers):
-    from arcdemo.worker.backends.diffusers_t2i import DiffusersT2I
     b = DiffusersT2I("k", {"repo": "stabilityai/stable-diffusion-3.5-large", "t5": "int8"}, {}, ["cpu"])
     with pytest.raises(RuntimeError, match="int8 needs CUDA"):
         b.load()
 
 
 def test_t2i_seeds_each_image_on_a_cpu_generator_round_robin(diffusers, tmp_path):
-    from arcdemo.worker.backends.diffusers_t2i import DiffusersT2I
     b = DiffusersT2I("sd15", {"repo": "runwayml/sd15"}, {"micro_batch": 2}, ["cpu", "cpu"])
     b.load()
     diffusers.calls.clear()
@@ -118,7 +127,6 @@ def test_t2i_seeds_each_image_on_a_cpu_generator_round_robin(diffusers, tmp_path
 
 
 def test_t2i_without_prompt_fails(diffusers, tmp_path):
-    from arcdemo.worker.backends.diffusers_t2i import DiffusersT2I
     b = DiffusersT2I("sd15", {"repo": "r"}, {}, ["cpu"])
     b.load()
     with pytest.raises(ValueError):
@@ -127,7 +135,6 @@ def test_t2i_without_prompt_fails(diffusers, tmp_path):
 
 
 def test_t2i_budget_aborts_the_image_in_flight(diffusers, tmp_path):
-    from arcdemo.worker.backends.diffusers_t2i import DiffusersT2I
     b = DiffusersT2I("sd15", {"repo": "r"}, {}, ["cpu"])
     b.load()
     b.model = [("cpu", FakePipe(delay=0.05))]
@@ -186,7 +193,6 @@ def trellis(monkeypatch, torch):
 
 
 def test_trellis2_resolution_picks_the_pipeline_and_low_vram_override(trellis, tmp_path):
-    from arcdemo.worker.backends.trellis import Trellis2
     b = Trellis2("trellis2-4b", {"repo": "microsoft/TRELLIS.2-4B", "low_vram": False}, {}, ["cuda:0"])
     b.load()
     assert b.model.low_vram is False and trellis["cuda"]
@@ -199,7 +205,6 @@ def test_trellis2_resolution_picks_the_pipeline_and_low_vram_override(trellis, t
 
 
 def test_trellis1_sampler_steps_and_rgba_check(trellis, tmp_path):
-    from arcdemo.worker.backends.trellis import Trellis1
     b = Trellis1("trellis-image-large", {"repo": "microsoft/TRELLIS-image-large"}, {}, ["cuda:0"])
     b.load()
     req = JobRequest(task="i23d", model="m", input_id="i", image_path=rgba(tmp_path), ss_steps=5)
@@ -231,10 +236,8 @@ def test_sf3d_loads_on_cpu_and_exports_a_glb(monkeypatch, torch, tmp_path):
     monkeypatch.setitem(sys.modules, "sf3d", types.ModuleType("sf3d"))
     monkeypatch.setitem(sys.modules, "sf3d.system", types.SimpleNamespace(SF3D=SF3D))
     monkeypatch.delenv("SF3D_USE_CPU", raising=False)
-    from arcdemo.worker.backends.sf3d import StableFast3D
     b = StableFast3D("sf3d", {"repo": "stabilityai/stable-fast-3d"}, {}, ["cpu"])
     b.load()
-    import os
     assert os.environ["SF3D_USE_CPU"] == "1" and seen["args"][1:] == ("config.yaml", "model.safetensors")
     img = tmp_path / "obj.png"
     Image.new("RGBA", (64, 64), (255, 0, 0, 255)).save(img)
@@ -247,7 +250,6 @@ def test_sf3d_loads_on_cpu_and_exports_a_glb(monkeypatch, torch, tmp_path):
 
 # ------------------------------------------------------------------ Task 3: Stable Audio 3
 def test_stable_audio3_throughput_loop_with_a_fake_library(monkeypatch, torch, tmp_path):
-    import numpy as np
 
     class Audio:
         def __init__(self, a):
@@ -266,10 +268,8 @@ def test_stable_audio3_throughput_loop_with_a_fake_library(monkeypatch, torch, t
             time.sleep(0.05)
             return [Audio(np.full((2, int(duration * 8000)), 0.25, dtype=np.float32))]
 
-    lib = types.SimpleNamespace(StableAudioModel=types.SimpleNamespace(
+    monkeypatch.setattr(stable_audio3, "StableAudioModel", types.SimpleNamespace(
         from_pretrained=lambda name, device=None, model_half=True: Model()))
-    monkeypatch.setitem(sys.modules, "stable_audio_3", lib)
-    from arcdemo.worker.backends.stable_audio3 import StableAudio3
     b = StableAudio3("sa3-small-music", {"sa3_name": "small-music"}, {}, ["cpu"])
     b.load()
     req = JobRequest(task="music", model="m", input_id="i", prompt="oud", length_s=0.1,
@@ -282,23 +282,18 @@ def test_stable_audio3_throughput_loop_with_a_fake_library(monkeypatch, torch, t
 
 # ------------------------------------------------------------------ Tasks 4 and 8: llama-server
 def test_chat_reconciles_with_the_servers_usage_count(fake_server, tmp_path):
-    import httpx
 
-    from arcdemo.worker.backends.llm import LlamaServer
     b = LlamaServer("qwen35-4b", {"task": "llm", "file": "*.gguf"}, {"results_dir": str(tmp_path)}, ["cpu"])
     b.http = httpx.Client(base_url=fake_server("complete"), trust_env=False)
     pieces = list(b._chat([{"role": "user", "content": "hi"}], 16, 0.0, 7, grammar="root ::= x"))
     assert "".join(p for p, _ in pieces) == "one two three" and sum(n for _, n in pieces) == 5
-    from tests.helpers import FakeLlama
     body = FakeLlama.bodies[-1]
     assert body["seed"] == 7 and body["grammar"] == "root ::= x" and body["stream"] is True
     assert body["chat_template_kwargs"] == {"enable_thinking": False}
 
 
 def test_llm_job_counts_tokens_and_saves_each_reply(fake_server, tmp_path):
-    import httpx
 
-    from arcdemo.worker.backends.llm import LlamaServer
     b = LlamaServer("qwen35-4b", {"task": "llm"}, {"results_dir": str(tmp_path)}, ["cpu"])
     b.http = httpx.Client(base_url=fake_server("complete"), trust_env=False)
     req = JobRequest(task="llm", model="m", input_id="i", prompt="hi", streams=2)
@@ -309,8 +304,6 @@ def test_llm_job_counts_tokens_and_saves_each_reply(fake_server, tmp_path):
 
 
 def test_slots_and_context_come_from_config_then_model():
-    from arcdemo.worker.backends.layout import LayoutServer
-    from arcdemo.worker.backends.llm import LlamaServer
     assert LlamaServer("k", {}, {"llm_slots": 4}, ["cpu"])._slots() == 4
     assert LlamaServer("k", {"slots": 2}, {"llm_slots": 4}, ["cpu"])._slots() == 2
     assert LlamaServer("k", {}, {}, ["cpu"])._ctx_per_slot() == 2048
@@ -335,13 +328,10 @@ FAKE_SERVER = textwrap.dedent('''\
 
 
 def test_llama_server_load_starts_the_binary_and_unload_stops_it(monkeypatch, tmp_path):
-    from arcdemo.worker.backends import llm
-    from tests.helpers import ROOT
     snap = tmp_path / "snap"
     (snap / "q").mkdir(parents=True)
     (snap / "q" / "model-Q4_K_M.gguf").write_bytes(b"gguf")
-    monkeypatch.setitem(sys.modules, "huggingface_hub",
-                        types.SimpleNamespace(snapshot_download=lambda repo, allow_patterns: str(snap)))
+    monkeypatch.setattr(llm, "snapshot_download", lambda repo, allow_patterns: str(snap))
     exe = tmp_path / "llama-server"
     argv = tmp_path / "argv.txt"
     exe.write_text(FAKE_SERVER.format(python=sys.executable, root=str(ROOT), argv=str(argv)))
@@ -362,12 +352,10 @@ def test_llama_server_load_starts_the_binary_and_unload_stops_it(monkeypatch, tm
 
 
 def test_llama_server_that_exits_reports_its_log(monkeypatch, tmp_path):
-    from arcdemo.worker.backends import llm
     snap = tmp_path / "snap"
     snap.mkdir()
     (snap / "m.gguf").write_bytes(b"x")
-    monkeypatch.setitem(sys.modules, "huggingface_hub",
-                        types.SimpleNamespace(snapshot_download=lambda repo, allow_patterns: str(snap)))
+    monkeypatch.setattr(llm, "snapshot_download", lambda repo, allow_patterns: str(snap))
     exe = tmp_path / "llama-server"
     exe.write_text(f"#!{sys.executable}\nimport sys\nprint('cudaMalloc failed: out of memory')\nsys.exit(1)\n")
     exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
@@ -381,10 +369,7 @@ def test_llama_server_that_exits_reports_its_log(monkeypatch, tmp_path):
 
 
 def test_layout_server_warms_every_slot_with_the_shared_prompt(fake_server, tmp_path):
-    import httpx
 
-    from arcdemo.worker.backends.layout import LayoutServer
-    from tests.helpers import FakeLlama
     b = LayoutServer("qwen35-4b-layout", {"task": "layout"}, {"results_dir": str(tmp_path), "llm_slots": 3}, ["cpu"])
     b.http = httpx.Client(base_url=fake_server("complete"), trust_env=False)
     with pytest.MonkeyPatch.context() as mp:

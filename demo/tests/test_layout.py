@@ -1,8 +1,16 @@
 """Layout parsing (prompt v3, wall-anchored), grammar and the room checks (no worker, no model)."""
+import json
 import re
 
+import pytest
+from fastapi.testclient import TestClient
+
 from arcdemo import layout_prompt as P
+from arcdemo.conductor.app import create_app
+from arcdemo.conductor.config import ROOT, DemoConfig
+from arcdemo.schemas import JobRequest
 from arcdemo.worker.backends import layout as L
+from arcdemo.worker.backends.llm import LlamaServer
 
 ROOM = {"room_type": "bedroom", "floor_plan": [[0, 0], [4, 0], [4, 3], [0, 3]], "door": [3.5, 0], "max_objects": 6}
 ELL = {"room_type": "living_room", "floor_plan": [[0, 0], [6, 0], [6, 2.8], [3.5, 2.8], [3.5, 5], [0, 5]],
@@ -146,7 +154,6 @@ def test_review_message_numbers_the_room_and_names_each_problem():
 
 def test_layout_server_keeps_the_llama_server_stream():
     """LayoutServer's reply hook must not shadow LlamaServer._stream (load()'s warm-up uses it)."""
-    from arcdemo.worker.backends.llm import LlamaServer
     assert L.LayoutServer._stream is LlamaServer._stream
 
 
@@ -185,7 +192,6 @@ def test_css_grammar_ends_each_line_with_an_escaped_newline():
 
 
 def test_example_bank_is_clean_and_has_no_stage_room():
-    import json
     stage = {json.dumps(r["floor_plan"]) for r in json.load(open("data/layout/stage_rooms.json"))}
     for e in P.exemplars():
         assert json.dumps(e["floor_plan"]) not in stage
@@ -208,17 +214,14 @@ def test_layoutgpt_prompt_gives_room_size_only_and_k_similar_examples():
 
 
 def test_layoutgpt_with_self_correction_is_refused():
-    from arcdemo.schemas import JobRequest
     req = JobRequest(task="layout", model="m", input_id="x", floor_plan=ROOM["floor_plan"], room_type="bedroom",
                      layout_prompt="layoutgpt", repairs=1)
-    import pytest
     with pytest.raises(ValueError, match="v3.1 prompt only"):
         L.room_spec(req)
 
 
 # ------------------------------------------------------------------ furniture catalogue ------
 def test_catalogue_is_what_the_prompt_uses():
-    import json
     doc = json.loads((P.ROOT / P.DEFAULT_CATALOG).read_text(encoding="utf-8"))
     assert P.FURNITURE == {c: tuple(f["size"]) for c, f in doc["furniture"].items()}
     assert P.WALL_PIECES == {c for c, f in doc["furniture"].items() if f["place"] == "wall"}
@@ -233,9 +236,7 @@ def test_every_catalogue_object_has_its_model_files():
 
 
 def test_bad_catalogue_is_refused_with_every_problem(tmp_path):
-    import json
 
-    import pytest
     bad = {"assets_dir": str(tmp_path), "furniture": {"bed": {"size": [1, 2], "place": "wall", "model": "nope.glb"}},
            "rooms": {"bedroom": ["bed", "sofa"]}}
     p = tmp_path / "f.json"
@@ -252,10 +253,7 @@ def test_bad_catalogue_is_refused_with_every_problem(tmp_path):
 
 
 def test_conductor_serves_the_catalogue_and_its_models():
-    from fastapi.testclient import TestClient
 
-    from arcdemo.conductor.app import create_app
-    from arcdemo.conductor.config import ROOT, DemoConfig
     cfg = DemoConfig(ROOT / "config" / "demo.yaml")
     with TestClient(create_app(cfg)) as c:
         cat = c.get("/api/layout_catalog").json()

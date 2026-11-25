@@ -37,6 +37,8 @@ class Trellis2(Backend):
     task = "i23d"
 
     def load(self) -> None:
+        # Deferred imports (an exception to imports-at-the-top): TRELLIS reads these environment
+        # variables when it is imported, and Trellis1 / Trellis2 need different ones.
         os.environ.setdefault("OPENCV_IO_ENABLE_OPENEXR", "1")
         os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
         from trellis2.pipelines import Trellis2ImageTo3DPipeline
@@ -56,7 +58,7 @@ class Trellis2(Backend):
                 "texture_size": req.texture_size or 2048, "decimation": req.decimation or 300000}
 
     def generate(self, req: JobRequest, ctx: JobContext) -> None:
-        import o_voxel
+        import o_voxel   # deferred: part of the TRELLIS.2 install, imported after load() set its environment
 
         img = _open_rgba(req.image_path)
         s = self.describe(req)
@@ -88,6 +90,7 @@ class Trellis1(Backend):
     task = "i23d"
 
     def load(self) -> None:
+        # Deferred import: TRELLIS v1 reads SPCONV_ALGO when it is imported.
         os.environ.setdefault("SPCONV_ALGO", "native")
         from trellis.pipelines import TrellisImageTo3DPipeline
 
@@ -100,7 +103,7 @@ class Trellis1(Backend):
                 "texture_size": req.texture_size or 1024, "simplify": 0.95}
 
     def generate(self, req: JobRequest, ctx: JobContext) -> None:
-        from trellis.utils import postprocessing_utils
+        from trellis.utils import postprocessing_utils   # deferred: see load()
 
         img = _open_rgba(req.image_path)
         s = self.describe(req)

@@ -12,7 +12,14 @@ import pytest
 import yaml
 
 from arcdemo.conductor.config import DemoConfig
+from arcdemo.conductor.moderation import check_prompt
+from arcdemo.layout_prompt import ROOMS, check, load_catalog, parse_line
 from arcdemo.schemas import JobRequest
+from arcdemo.worker.backends.base import _BACKENDS
+from arcdemo.worker.backends.layout import mock_layout
+from arcdemo.worker.backends.llm import LlmMock
+from arcdemo.worker.backends.mock import _placeholder_image
+from arcdemo.worker.backends.music_stub import write_tone
 from tests.helpers import CONFIG, ROOT
 
 STATIC = ROOT / "arcdemo" / "conductor" / "static"
@@ -42,7 +49,6 @@ def test_every_worker_config_has_the_required_keys(name):
 
 def test_models_yaml_entries_are_complete():
     models = yaml.safe_load((CONFIG / "models.yaml").read_text())["models"]
-    from arcdemo.worker.backends.base import _BACKENDS
     for key, spec in models.items():
         assert spec["task"] in REQUIRED and spec["backend"] in _BACKENDS, key
         assert spec.get("repo"), key
@@ -83,14 +89,12 @@ def test_t2i_prompt_lists(name):
 
 
 def test_spare_prompts_pass_moderation():
-    from arcdemo.conductor.moderation import check_prompt
     doc = json.loads((ROOT / "data/t2i/live_fallback_prompts.json").read_text(encoding="utf-8"))
     texts = [p if isinstance(p, str) else p.get("prompt", "") for p in doc["prompts"]]
     assert [t for t in texts if not check_prompt(t)["ok"]] == []
 
 
 def test_layout_exemplars_are_valid_rooms():
-    from arcdemo.layout_prompt import ROOMS, parse_line
     for e in json.loads((ROOT / "data/layout/exemplars.json").read_text()):
         assert e["room_type"] in ROOMS and len(e["v3"]) == len(e["layout"]) == e["max_objects"]
         assert all(parse_line(ln, e) is not None for ln in e["v3"]), e["id"]
@@ -146,14 +150,12 @@ def test_javascript_parses(name):
 
 
 def test_furniture_catalogue_models_exist():
-    from arcdemo.layout_prompt import load_catalog
     cat = load_catalog(check_models=True)
     assert cat["furniture"] and (ROOT / cat["assets_dir"]).is_dir()
 
 
 # ------------------------------------------------------------------ mock backends' outputs
 def test_mock_placeholder_image_is_seeded():
-    from arcdemo.worker.backends.mock import _placeholder_image
     req = JobRequest(task="t2i", model="sd15", input_id="i", seed=3)
     a, b = _placeholder_image(req, 0, "dgx", "sd15"), _placeholder_image(req, 0, "dgx", "sd15")
     assert a.size == (512, 512) and a.tobytes() == b.tobytes()
@@ -161,22 +163,18 @@ def test_mock_placeholder_image_is_seeded():
 
 
 def test_music_stub_writes_a_stereo_wav(tmp_path):
-    from arcdemo.worker.backends.music_stub import write_tone
     write_tone(tmp_path / "t.wav", seconds=1, seed=2)
     with wave.open(str(tmp_path / "t.wav")) as w:
         assert (w.getnchannels(), w.getframerate(), w.getnframes()) == (2, 44100, 44100)
 
 
 def test_llm_mock_streams_max_tokens():
-    from arcdemo.worker.backends.llm import LlmMock
     b = LlmMock("k", {}, {"mock_speed": 0.0}, ["cpu"])
     out = list(b._stream(JobRequest(task="llm", model="k", input_id="i", max_tokens=12), 0))
     assert len(out) == 12 and out[0][0].startswith("[MOCK]")
 
 
 def test_layout_mock_rooms_are_clean():
-    from arcdemo.layout_prompt import check, parse_line
-    from arcdemo.worker.backends.layout import mock_layout
     spec = {"room_type": "bedroom", "floor_plan": [[0, 0], [4, 0], [4, 3.5], [0, 3.5]], "door": [3.5, 0],
             "max_objects": 6}
     placed = []

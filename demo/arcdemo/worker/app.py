@@ -26,11 +26,19 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
+import psutil
 import yaml
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
 
+try:                     # optional: the llm venv has no torch (llama-server does its GPU work)
+    import torch
+except ImportError:
+    torch = None
+
+from ..layout_prompt import DEFAULT_CATALOG, load_catalog
 from ..schemas import TERMINAL, HealthInfo, JobRequest, JobResult, LoadRequest
+from ..weights import on_disk
 from . import tasks
 from .backends.base import Backend, JobContext, backend_class, free_memory, is_oom
 from .metrics import Clock
@@ -47,7 +55,6 @@ def load_worker_config(path: str, tasks: list[str]) -> dict:
     cfg["models"] = models
     cfg["tasks"] = tasks
     if "layout" in tasks:     # the furniture catalogue the prompt, grammar and room checks use
-        from ..layout_prompt import DEFAULT_CATALOG, load_catalog
         cfg["layout_catalog_sha"] = load_catalog(cfg.get("layout_catalog", DEFAULT_CATALOG))["sha"]
     cfg["results_dir"] = str((ROOT / cfg.get("results_dir", "results")).resolve())
     Path(cfg["results_dir"]).mkdir(parents=True, exist_ok=True)
@@ -214,9 +221,6 @@ class JobRunner:
 def memory_report() -> dict:
     """This worker's resident memory (itself plus children such as llama-server) and what the
     machine has free. VRAM only when this process already uses CUDA (asking would create a context)."""
-    import sys
-
-    import psutil
     out: dict = {}
     try:
         p = psutil.Process()
@@ -230,7 +234,6 @@ def memory_report() -> dict:
         out["ram_free_mb"] = round(psutil.virtual_memory().available / 2**20)
     except psutil.Error:
         pass
-    torch = sys.modules.get("torch")
     try:
         if torch is not None and torch.cuda.is_available() and torch.cuda.is_initialized():
             out["vram_free_mb"] = round(torch.cuda.mem_get_info()[0] / 2**20)
@@ -252,15 +255,14 @@ def env_report(cfg: dict) -> dict:
     info: dict = {"machine": cfg["machine"], "python": platform.python_version(),
                   "platform": platform.platform(), "packages": comparable,
                   "env_hash": hashlib.sha1("\n".join(comparable).encode()).hexdigest()[:12]}
-    try:
-        import torch
+    if torch is None:
+        info["torch"] = None
+    else:
         info["torch"] = torch.__version__
         info["cuda"] = torch.version.cuda
         info["gpus"] = ([torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())]
                         if torch.cuda.is_available() else [])
         info["threads"] = torch.get_num_threads()
-    except ImportError:
-        info["torch"] = None
     for pkg in ("diffusers", "transformers", "accelerate", "bitsandbytes"):
         try:
             info[pkg] = md.version(pkg)
@@ -284,8 +286,6 @@ def create_app(cfg: dict) -> FastAPI:
         env_cache.update(env_report(cfg))   # slow (scans installed packages): do it once, here
         torch_tasks = [t for t in cfg["tasks"] if t not in tasks.OWN_THREADS]   # llama-server sets its own threads
         if any(d == "cpu" for t in torch_tasks for d in cfg["devices"].get(t, [])) and not cfg.get("mock"):
-            import psutil
-            import torch
             torch.set_num_threads(int(cfg.get("cpu_threads") or psutil.cpu_count(logical=False) or 1))
             log.info("CPU threads: %d", torch.get_num_threads())
         keys = [k for t in cfg["tasks"] for k in (cfg.get("preload") or {}).get(t, [])]
@@ -315,7 +315,6 @@ def create_app(cfg: dict) -> FastAPI:
     def available() -> list[str]:
         """Models of this worker's tasks whose weights are on disk (re-checked every 15 s)."""
         if time.time() - disk["at"] > 15:
-            from ..weights import on_disk
             disk["keys"] = [k for k, spec in cfg["models"].items() if spec.get("task") in cfg["tasks"]
                             and (cfg.get("mock") or on_disk(spec, k))]
             disk["at"] = time.time()

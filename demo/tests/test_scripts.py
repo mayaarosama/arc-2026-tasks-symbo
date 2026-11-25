@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import importlib
 import json
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
+from arcdemo.conductor.config import DemoConfig
+from arcdemo.layout_prompt import parse_line
 from tests.helpers import ROOT
 
 SCRIPTS = ROOT / "scripts"
@@ -63,7 +67,6 @@ def test_powershell_script_parses():
 
 def test_secrets_file_default_matches_its_own_comment():
     """The header comment of each GPU script names the default secrets file; the code must agree."""
-    import re
     for name in ("setup_gpu_machine.sh",):
         text = find(name).read_text(encoding="utf-8")
         documented = re.search(r"SECRETS \(default ([^ )]+)", text).group(1)
@@ -74,7 +77,6 @@ def test_secrets_file_default_matches_its_own_comment():
 
 # ------------------------------------------------------------------ shared tools
 def test_download_weights_picks_every_model_a_machine_runs():
-    from arcdemo.conductor.config import DemoConfig
     dw = load("download_weights.py")
     cfg = DemoConfig(ROOT / "config/demo.yaml")
     mid = cfg.machines[0]["id"]
@@ -126,7 +128,6 @@ def test_fit_upload_has_a_main_guard():
 
 
 def test_prepare_gso_look_at_is_a_rigid_transform():
-    import numpy as np
     pg = load("prepare_gso.py")
     m = pg.look_at(np.array([0.0, -2.0, 1.0]), np.zeros(3), np.array([0.0, 0.0, 1.0]))
     r = m[:3, :3]
@@ -143,7 +144,6 @@ def test_build_layout_exemplars_reproduces_the_committed_file(tmp_path, monkeypa
 
 
 def test_compare_layout_against_wall_and_timings(tmp_path):
-    from arcdemo.layout_prompt import parse_line
     cl = load("compare_layout.py")
     spec = {"room_type": "bedroom", "floor_plan": [[0, 0], [4, 0], [4, 3], [0, 3]], "door": [3.5, 0]}
     assert cl.against_wall(parse_line("wardrobe wall=north at=1.00", spec), spec)
@@ -154,7 +154,6 @@ def test_compare_layout_against_wall_and_timings(tmp_path):
 
 def test_sample_layout_review_page_and_prompt_writers(tmp_path):
     sl = load("sample_layout.py")
-    from arcdemo.conductor.config import DemoConfig
     rooms = DemoConfig(ROOT / "config/demo.yaml").inputs["layout"][:1]
     sl.write_prompt(tmp_path, rooms)
     assert "=== system ===" in (tmp_path / "prompt.txt").read_text(encoding="utf-8")

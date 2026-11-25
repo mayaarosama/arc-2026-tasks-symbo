@@ -1,6 +1,8 @@
 """Worker job lifecycle against the mock backend (no GPU): the acceptance checks
 'a run that exceeds the budget returns cleanly rather than hanging' and
 'the TRELLIS.2 memory failure is reported cleanly as out_of_memory'."""
+import base64
+import json
 import time
 from pathlib import Path
 
@@ -8,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from arcdemo.worker.app import create_app, load_worker_config
+from arcdemo.worker.tasks import save_upload
 
 CONFIG = Path(__file__).resolve().parents[1] / "config"
 
@@ -138,7 +141,6 @@ ROOM = {"task": "layout", "model": "qwen35-4b-layout", "input_id": "lay-01", "se
 
 
 def test_layout_places_objects_one_at_a_time(tmp_path):
-    import json
     with client("dgx", 0.02, tmp_path) as c:
         res = run(c, ROOM)
     assert res["status"] == "ok" and res["completed"] == 1 == res["requested"]
@@ -181,7 +183,6 @@ def test_layout_mistake_is_only_flagged_without_self_correction(tmp_path):
 
 
 def test_layout_repair_rewrites_the_flagged_line_at_once(tmp_path):
-    import json
     with mistakes_client(tmp_path) as c:
         res = run(c, {**ROOM, "repairs": 2})
     assert res["status"] == "ok" and res["settings"]["repairs"] == 2
@@ -201,7 +202,6 @@ def test_layout_repair_rewrites_the_flagged_line_at_once(tmp_path):
 
 
 def test_layout_review_fixes_the_finished_room(tmp_path):
-    import json
     with mistakes_client(tmp_path) as c:
         res = run(c, {**ROOM, "review_rounds": 2})
     objs = res["objects"]
@@ -214,9 +214,7 @@ def test_layout_review_fixes_the_finished_room(tmp_path):
 
 
 def test_uploaded_image_is_checked_before_it_is_saved(tmp_path):
-    import base64
 
-    from arcdemo.worker.tasks import save_upload
     good = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"x" * 10).decode()
     assert save_upload(good, tmp_path, "abc123").read_bytes().startswith(b"\x89PNG")
     with pytest.raises(ValueError, match="PNG"):

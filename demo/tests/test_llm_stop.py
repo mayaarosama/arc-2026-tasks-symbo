@@ -8,11 +8,13 @@ import time
 import httpx
 import pytest
 
+import arcdemo.worker.backends.llm as llm
 from arcdemo.schemas import JobRequest, JobResult
 from arcdemo.worker.backends.base import JobContext
 from arcdemo.worker.backends.layout import LayoutServer
 from arcdemo.worker.backends.llm import LlamaServer
 from arcdemo.worker.metrics import Clock
+
 
 def backend(cls, url: str, tmp_path):
     b = cls("qwen35-4b", {"task": "llm", "file": "*.gguf"}, {"results_dir": str(tmp_path)}, ["cpu"])
@@ -86,7 +88,6 @@ def test_stop_while_server_has_sent_nothing_yet(fake_server, tmp_path):
 
 def test_server_that_answers_after_stop_is_hung_up_on(tmp_path):
     """The abandoned request's response arrives late: it must be closed, not left streaming."""
-    import arcdemo.worker.backends.llm as llm
 
     gate, closed = threading.Event(), threading.Event()
 

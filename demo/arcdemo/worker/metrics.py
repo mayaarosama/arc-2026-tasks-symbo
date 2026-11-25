@@ -14,6 +14,11 @@ from typing import Optional
 
 import psutil
 
+try:                     # optional: the llm venv has no torch (llama-server does its GPU work)
+    import torch
+except ImportError:
+    torch = None
+
 
 class Clock:
     def __init__(self) -> None:
@@ -36,9 +41,7 @@ def cuda_sync(devices: list[str]) -> None:
     idx = _cuda_devices(devices)
     if not idx:
         return
-    try:
-        import torch
-    except ImportError:      # the llm env has no torch: its GPU work runs inside llama-server
+    if torch is None:        # the llm env has no torch: its GPU work runs inside llama-server
         return
     for i in idx:
         torch.cuda.synchronize(i)
@@ -59,7 +62,6 @@ class MemoryMeter:
 
     def __enter__(self) -> "MemoryMeter":
         if self.gpu:
-            import torch
             for i in self.gpu:
                 torch.cuda.reset_peak_memory_stats(i)
         else:
@@ -80,7 +82,6 @@ class MemoryMeter:
 
     def __exit__(self, *exc) -> None:
         if self.gpu:
-            import torch
             mb = 1024 * 1024
             self.peak_allocated_mb = sum(torch.cuda.max_memory_allocated(i) for i in self.gpu) / mb
             self.peak_reserved_mb = sum(torch.cuda.max_memory_reserved(i) for i in self.gpu) / mb

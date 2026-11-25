@@ -13,6 +13,7 @@ from arcdemo.schemas import JobRequest
 from arcdemo.worker import app as W
 from arcdemo.worker import tasks
 from tests.helpers import CONFIG, mock_worker_cfg, wait_job
+from tests.test_conductor_unit import png_bytes
 
 
 def test_load_worker_config_applies_overrides_and_catalogue(tmp_path):
@@ -135,7 +136,6 @@ def test_worker_honours_the_configured_token_env(monkeypatch, tmp_path):
 
 
 def test_job_with_uploaded_picture_is_written_before_the_clock(worker_client, tmp_path):
-    from tests.test_conductor_unit import png_bytes
     c = worker_client("dgx", tasks=["i23d"])
     job = {"task": "i23d", "model": "sf3d", "input_id": "up-x", "image_b64": base64.b64encode(png_bytes()).decode()}
     rid = c.post("/jobs", json=job).json()["run_id"]

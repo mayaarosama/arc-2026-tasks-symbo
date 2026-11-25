@@ -24,6 +24,11 @@ from typing import Optional
 import numpy as np
 from PIL import Image, ImageOps
 
+try:                     # the conductor's venv has it; without it only transparent PNGs can be used
+    import onnxruntime as ort
+except ImportError:
+    ort = None
+
 ROOT = Path(__file__).resolve().parents[1]          # demo/
 
 MAX_BYTES = 10 * 1024 * 1024    # file size
@@ -94,10 +99,8 @@ def _session():
                 raise Rejected("This picture has no transparent background, and the cut-out model is not "
                                "installed on this laptop (run: python -m scripts.common.download_weights --cutout). "
                                "Use a PNG with a transparent background instead.")
-            try:
-                import onnxruntime as ort
-            except ImportError as e:
-                raise Rejected("The cut-out needs onnxruntime: pip install -r requirements/conductor.txt") from e
+            if ort is None:
+                raise Rejected("The cut-out needs onnxruntime: pip install -r requirements/conductor.txt")
             want = os.environ.get("ARC_CUTOUT_DEVICE", "auto").lower()   # auto | cpu | cuda
             providers = ["CPUExecutionProvider"]
             if want != "cpu" and "CUDAExecutionProvider" in ort.get_available_providers():

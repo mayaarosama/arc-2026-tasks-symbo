@@ -3,7 +3,7 @@ import io
 
 import numpy as np
 import pytest
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from arcdemo import imageprep as P
 
@@ -16,7 +16,6 @@ def png(img: Image.Image, fmt: str = "PNG") -> bytes:
 
 def object_on(size=(800, 600), box=(250, 150, 550, 450), bg=(0, 0, 0, 0), mode="RGBA") -> Image.Image:
     """A red 'object' (an ellipse) on a background; transparent background by default."""
-    from PIL import ImageDraw
     img = Image.new("RGBA", size, bg)
     ImageDraw.Draw(img).ellipse(box, fill=(200, 40, 40, 255))
     return img.convert(mode)

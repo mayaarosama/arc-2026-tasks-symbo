@@ -39,7 +39,7 @@ def gb(n: float) -> str:
 
 def remote_files(api, repo: str, ignore, allow) -> tuple[list[tuple[str, int]], str]:
     """(filename, size) of every file the download would fetch, and the commit."""
-    from huggingface_hub.utils import filter_repo_objects
+    from huggingface_hub.utils import filter_repo_objects   # deferred: see main()
     info = api.model_info(repo, files_metadata=True)
     sizes = {s.rfilename: s.size or 0 for s in info.siblings}
     names = filter_repo_objects(list(sizes), allow_patterns=allow, ignore_patterns=ignore)
@@ -47,7 +47,7 @@ def remote_files(api, repo: str, ignore, allow) -> tuple[list[tuple[str, int]], 
 
 
 def missing_bytes(repo: str, files: list[tuple[str, int]], sha: str) -> int:
-    from huggingface_hub import try_to_load_from_cache
+    from huggingface_hub import try_to_load_from_cache      # deferred: see main()
     return sum(size for name, size in files
                if not isinstance(try_to_load_from_cache(repo, name, revision=sha), str))
 
@@ -74,6 +74,8 @@ def main() -> int:
     out = Path(a.out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
+    # Deferred imports: huggingface_hub reads HF_HUB_CACHE when it is imported, and importing arcdemo
+    # (above) is what sets it; a top-level import would be sorted above arcdemo's and use ~/.cache.
     from huggingface_hub import HfApi
     from huggingface_hub.constants import HF_HUB_CACHE
     api = HfApi()                             # HF_TOKEN from the environment

@@ -1,16 +1,20 @@
 """End to end: conductor + three mock worker processes. Covers the failure drill:
 a dead worker must never hang a round — the cell falls back and says why."""
 import asyncio
+import base64
+import io
 import json
 import time
 from pathlib import Path
 
 import httpx
 import pytest
+from PIL import Image, ImageDraw
 
 from arcdemo.conductor.config import DemoConfig
 from arcdemo.conductor.core import Conductor
 from arcdemo.conductor.tasks.i23d import add_upload
+from arcdemo.weights import on_disk
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -79,7 +83,6 @@ SLOW_CPU = {"dgx": 0.01, "workstation": 0.02, "cpu": 50}     # cpu: ~28 s per im
 
 def save_full_recording(cfg: DemoConfig, tmp_path: Path, seconds: float = 123.4) -> None:
     """What `rehearse.py --full` leaves behind for the CPU on seg2 / t2i-01."""
-    from PIL import Image
     img = tmp_path / "rec-0.png"
     Image.new("RGB", (8, 8)).save(img)
     Conductor(cfg).replay.save("t2i", "iso_time", "cpu", "t2i-01", cfg.settings("t2i", "iso_time", "cpu"),
@@ -266,7 +269,6 @@ def test_model_not_on_disk_is_refused_and_never_sent(stack):
 
 
 def test_on_disk_reads_the_hub_cache(tmp_path, monkeypatch):
-    from arcdemo.weights import on_disk
     monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
     gguf = {"repo": "org/m-GGUF", "file": "*Q4_K_M.gguf"}
     assert not on_disk(gguf)
@@ -428,10 +430,7 @@ def test_furnish_and_fix_round_sends_the_self_correction_settings(stack):
 
 
 def test_uploaded_picture_runs_live_and_every_machine_gets_the_same_file(stack, tmp_path):
-    import base64
-    import io
 
-    from PIL import Image, ImageDraw
     cfg, _ = stack
     img = Image.new("RGBA", (800, 600), (0, 0, 0, 0))
     ImageDraw.Draw(img).ellipse((250, 150, 550, 450), fill=(30, 120, 200, 255))

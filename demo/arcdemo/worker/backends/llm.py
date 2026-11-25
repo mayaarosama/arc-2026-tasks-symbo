@@ -33,6 +33,14 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Iterator, Optional
 
+import httpx
+
+try:                     # the llm venv has it; .venv (tests, mock workers) does not
+    from huggingface_hub import snapshot_download
+except ImportError:
+    snapshot_download = None
+import psutil
+
 from ...prompts import llm_system
 from ...schemas import JobRequest
 from .base import Backend, JobContext
@@ -202,9 +210,8 @@ class LlamaServer(LlmBackend):
         return box["resp"]
 
     def load(self) -> None:
-        import httpx
-        from huggingface_hub import snapshot_download
-
+        if snapshot_download is None:
+            raise ModuleNotFoundError("huggingface_hub is not installed in this venv (requirements/llm.txt)")
         pattern = self.spec["file"]
         root = Path(snapshot_download(self.repo, allow_patterns=[pattern]))
         files = sorted(p for p in root.rglob("*.gguf") if fnmatch(p.relative_to(root).as_posix(), pattern))
@@ -342,7 +349,6 @@ class _ServerMemory:
             except (OSError, subprocess.SubprocessError):
                 pass
         else:
-            import psutil
             try:
                 self.peak_allocated_mb = psutil.Process(pid).memory_info().rss / (1024 * 1024)
             except psutil.Error:

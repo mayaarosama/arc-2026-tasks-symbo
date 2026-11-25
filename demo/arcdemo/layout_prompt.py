@@ -561,8 +561,6 @@ def css_grammar(spec: dict) -> str:
 def exemplars() -> list[dict]:
     global _EXEMPLARS
     if _EXEMPLARS is None:
-        import json
-        from pathlib import Path
         path = Path(__file__).resolve().parents[1] / EXEMPLARS_PATH
         _EXEMPLARS = json.loads(path.read_text(encoding="utf-8"))
     return _EXEMPLARS

@@ -11,6 +11,7 @@ import math
 import time
 
 import numpy as np
+import trimesh
 from PIL import Image, ImageDraw, ImageFont
 
 from ...schemas import JobRequest
@@ -67,7 +68,6 @@ class MockBackend(Backend):
 
     # ---- i23d ------------------------------------------------------------------------------
     def _i23d(self, req: JobRequest, ctx: JobContext) -> None:
-        import trimesh
 
         total = _I23D_SECONDS.get(self.key, 10.0) * self.speed
         if self.key == "trellis2-4b" and req.resolution:

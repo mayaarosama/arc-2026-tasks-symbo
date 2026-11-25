@@ -41,6 +41,8 @@ def main() -> int:
     ap.add_argument("--rooms", help="comma list of input ids (default: all)")
     ap.add_argument("--out", help="output folder (default: results-local/layout-review-<machine>-<time>)")
     a = ap.parse_args()
+    if "huggingface_hub" in sys.modules:   # read HF_HUB_OFFLINE at its import: offline would not be enforced
+        sys.exit("huggingface_hub was imported before HF_HUB_OFFLINE was set: offline mode is not enforced")
     os.environ["HF_HUB_OFFLINE"] = "1"          # before the backend imports huggingface_hub: no network
 
     cfg = load_worker_config(str(Path(a.config).resolve()), ["layout"])

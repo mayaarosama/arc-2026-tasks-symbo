@@ -11,6 +11,9 @@ from typing import Any, Optional
 
 import yaml
 
+from ..layout_prompt import DEFAULT_CATALOG, load_catalog
+from ..schemas import JobRequest
+
 ROOT = Path(__file__).resolve().parents[2]      # demo/
 
 
@@ -48,12 +51,10 @@ class DemoConfig:
         # draws them with (served from its assets_dir). Every model file must exist.
         self.layout_catalog: dict = {}
         if "layout" in self.inputs:
-            from ..layout_prompt import DEFAULT_CATALOG, load_catalog
             self.layout_catalog = load_catalog(self.raw.get("layout_catalog", DEFAULT_CATALOG), check_models=True)
         self._validate()
 
     def _validate(self) -> None:
-        from ..schemas import JobRequest
         job_fields = set(JobRequest.model_fields)
         errors = []
         for seg in self.segments:
