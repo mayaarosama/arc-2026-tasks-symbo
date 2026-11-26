@@ -26,7 +26,8 @@
   table { width:100%; border-collapse:collapse; font-size:12.5px; }
   td, th { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
   .up { color:var(--ok); } .down { color:var(--bad); } .warn { color:var(--warn); }
-  textarea, input[type=number], select { width:100%; background:#0d1014; color:var(--ink); border:1px solid #3a4350; border-radius:6px; padding:8px; font:inherit; }
+  .room-grid { display:grid; grid-template-columns: 1fr 90px; gap:8px; }
+  textarea, input[type=number], input[type=text], select { width:100%; background:#0d1014; color:var(--ink); border:1px solid #3a4350; border-radius:6px; padding:8px; font:inherit; }
   select { cursor:pointer; }
   label.field { display:block; color:var(--ink-2); font-size:12.5px; margin:6px 0 4px; }
   .muted { color:var(--ink-2); font-size:12.5px; }
@@ -104,6 +105,29 @@
         <details><summary>What makes a good picture</summary><dl id="upload-spec" class="spec"></dl></details>
         <div class="msg" id="upload-msg"></div>
         <div class="row upload-preview" id="upload-preview"></div>
+      </div>
+      <div id="room-box" hidden>
+        <details id="room-form"><summary>Or draw a room of your own</summary>
+          <label class="field" for="room-type">Room type</label>
+          <select id="room-type"></select>
+          <label class="field" for="room-corners">Corners in metres, in order round the room (x runs east, y runs north)</label>
+          <textarea id="room-corners" rows="2" placeholder="0,0  4,0  4,3  0,3"></textarea>
+          <div class="room-grid">
+            <div><label class="field" for="room-door">Door (x,y on a straight wall, or none)</label>
+              <input type="text" id="room-door" placeholder="1,0"></div>
+            <div><label class="field" for="room-pieces">Pieces</label>
+              <input type="number" id="room-pieces" min="1"></div>
+          </div>
+          <label class="field" for="room-label">Name on the list (optional)</label>
+          <input type="text" id="room-label" placeholder="Your bedroom · 4 × 3 m">
+          <div class="row" style="margin-top:8px">
+            <button id="room-copy" title="Fill the form from the room chosen above, to change it">Copy the selected room</button>
+            <button class="primary" id="room-add">Add this room</button>
+          </div>
+          <details><summary>What the room may be</summary><dl id="room-rules" class="spec"></dl></details>
+          <div class="msg" id="room-msg"></div>
+          <div class="plan" id="room-preview"></div>
+        </details>
       </div>
       <div id="live-box" hidden>
         <label class="field" for="prompt">Prompt to run (typed by the operator, never by the audience)</label>

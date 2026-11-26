@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw
 from arcdemo.conductor.config import DemoConfig
 from arcdemo.conductor.core import Conductor
 from arcdemo.conductor.tasks.i23d import add_upload
+from arcdemo.conductor.tasks.layout import add_room
 from arcdemo.weights import on_disk
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -214,6 +215,29 @@ def test_layout_round_builds_the_same_room_everywhere(stack):
     assert times == sorted(times) and times[0] < times[-1]          # arrived one at a time
     assert all(c["outputs"][0]["url"].endswith(".json") for c in cells.values())
     assert cond.history[-1]["cells"]["dgx"]["layout"]["objects"] == len(rooms["dgx"])
+
+
+def test_own_room_runs_live_and_survives_a_restart(stack):
+    cfg, _ = stack
+    plan = [[0, 0], [5, 0], [5, 2.5], [3, 4], [0, 4]]                # an angled corner, not a stage room
+
+    async def go():
+        cond = Conductor(cfg)
+        await cond.refresh_health()
+        item = add_room(cond, {"room_type": "study", "floor_plan": plan, "door": [0, 1], "max_objects": 6})
+        rnd = await cond.start_round("seg8", item["id"])
+        await cond.wait_round(60)
+        again = Conductor(cfg)
+        await cond.http.aclose()
+        await again.http.aclose()
+        return item, rnd, again.cfg.input("layout", item["id"])
+
+    item, rnd, reloaded = asyncio.run(go())
+    assert reloaded["floor_plan"] == plan and rnd["input"]["door_wall"] == "west"
+    cells = rnd["cells"]
+    assert {c["mode"] for c in cells.values()} == {"LIVE"} and {c["status"] for c in cells.values()} == {"ok"}, \
+        {m: c["note"] for m, c in cells.items()}
+    assert all(0 < len(c["objects"]) <= 6 for c in cells.values())
 
 
 def test_layout_replay_keeps_object_times(stack, tmp_path):

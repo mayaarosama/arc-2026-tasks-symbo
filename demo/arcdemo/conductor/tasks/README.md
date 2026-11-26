@@ -11,7 +11,7 @@ its default, so a task overrides only what it needs.
 | `i23d.py` | 2 · image to 3D | `on_start` (re-offer saved uploads), `caption` (no score for an upload), `job_fields` (image path, or the uploaded PNG as base64), `budget_note` (finished after the bell), `after_result` (score against the GSO scan), routes `GET /api/i23d/spec`, `POST /api/i23d/upload`. Also `add_upload` / `load_uploads` |
 | `music.py` | 3 · music (reserve) | `job_fields` (prompt, mode, audio, length) |
 | `llm.py` | 4 · language model race | `job_fields` (prompt), `prompt_text` (system + user, for the operator page), `hard_budget` |
-| `layout.py` | 8 · scene construction | `prepare_input` (wall names and the request in words), `job_fields` (room, plan, door), `summary` (objects and flags), `prompt_text`, `hard_budget`, routes `GET /api/layout_catalog`, `GET /api/layout_view`, and the furniture models at `/layout-assets`. Also `layout_view`, `layout_prompt_text`, `layout_summary` |
+| `layout.py` | 8 · scene construction | `on_start` (re-offer the operator's saved rooms), `prepare_input` (wall names and the request in words), `job_fields` (room, plan, door), `summary` (objects and flags), `prompt_text`, `hard_budget`, routes `GET /api/layout_catalog`, `GET /api/layout_view`, `GET /api/layout/rules`, `POST /api/layout/room` (the operator's own room: preview, or save), and the furniture models at `/layout-assets`. Also `layout_view`, `layout_prompt_text`, `layout_summary`, `check_room` / `add_room` / `load_rooms` |
 | `__init__.py` | — | `HANDLERS` in show order, and `handler(task)` |
 
 To add a task:

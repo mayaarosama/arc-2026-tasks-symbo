@@ -149,6 +149,16 @@ class LayoutCosts(_Section):
     must_have: float
 
 
+class LayoutCustom(_Section):
+    max_corners: int
+    min_side: float
+    min_wall: float
+    min_area: float
+    door_margin: float
+    max_objects: int
+    label_chars: int
+
+
 class Layout(_Section):
     room_type: str
     max_objects: int
@@ -164,6 +174,7 @@ class Layout(_Section):
     checks: LayoutChecks
     costs: LayoutCosts
     must_have: dict[str, list[str]]
+    custom: LayoutCustom
 
 
 class Mock(_Section):
