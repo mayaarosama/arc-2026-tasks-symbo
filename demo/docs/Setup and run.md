@@ -334,3 +334,39 @@ What the projector shows:
 
 On a laptop CPU the first object appears after about 30 s and a room takes 55–75 s. The 3D view needs
 WebGL; without it the stage falls back to the box view.
+
+### A room of your own
+
+In a *Furnish the room* part, under **Example prompt**, open **Or draw a room of your own**:
+
+1. Choose the room type: bedroom, living room, library, study or dining room. These are the room types in the furniture catalogue.
+2. Type the corners in metres, in order round the room, for example `0,0  4,0  4,3  0,3`. x runs east and y runs north.
+3. Optionally, type the door as `x,y` on a straight wall (or `none`), the number of pieces, and a name for the list.
+
+A field left empty takes the value of the room chosen above, which is shown greyed in the field. The
+room type follows the room chosen above until you pick one yourself. So to try the bedroom's plan as a
+study, choose the bedroom, open the form, pick *study* and press **Add this room**.
+
+The plan and the request appear under the form as you type, or the reason the room cannot run.
+**Copy the selected room** fills the form from the room chosen above, so you can start from a stage room.
+**Add this room** adds it under *Your rooms (live only)* and selects it. Then press **▶ Start**.
+
+The conductor checks the room and may tidy it. It says what it changed:
+- it drops a repeated corner, or a corner in the middle of a straight wall;
+- it moves the room so that x and y start at 0, because the model writes no negative numbers;
+- it moves a door that is within 0.25 m of a straight wall onto that wall, and at least 0.45 m from the wall's ends.
+
+| | Rule |
+| --- | --- |
+| Corners | 3 to 12, in order round the room; walls must not cross |
+| Size | 2 to 8 m each way (LayoutGPT's floor mask covers 8 m), at least 4 m² of floor, every wall at least 0.3 m |
+| Walls | At least one wall must run north-south or east-west. Wall pieces stand only against those; angled walls are kept clear |
+| Door | Optional; on a straight wall |
+| Pieces | 1 to 14 |
+
+The limits are `layout.custom` in `config/defaults.yaml`. The outline travels in the job, so the
+workers need nothing new. A room stays in the list until the session folder is cleared
+(`session_dir/uploads/rooms.json`).
+
+A room of your own runs **live only**, like an uploaded picture. There is no rehearsal recording, so a
+failed machine shows its error and not a REPLAY.

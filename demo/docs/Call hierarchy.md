@@ -292,6 +292,11 @@ sequenceDiagram
     participant LS as llama-server
     participant ST as stage.js + layout3d.js
 
+    opt the operator's own room
+        OP->>T: loadRoomRules() GET /api/layout/rules
+        OP->>T: previewRoom() POST /api/layout/room (save false): check_room(), layout_view()
+        OP->>T: addRoom() POST /api/layout/room: add_room(), cfg.add_input("layout", item), rooms.json
+    end
     OP->>T: loadLayoutView() GET /api/layout_view, then layout_view(): wall names, request in words
     OP->>T: showPrompt() GET /api/prompt, then layout_prompt_text()
     T->>LP: messages() or layoutgpt_messages(), grammar() or css_grammar()

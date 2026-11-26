@@ -6,6 +6,8 @@
 // 4 llm, 8 layout), each filling OPERATOR_VIEW[task] where the page differs:
 //   describe(x)            an example's text in the dropdown
 //   uploads                show the picture upload box
+//   rooms                  show the "draw a room of your own" form
+//   mineLabel              the dropdown group of the operator's own inputs (tier "upload")
 //   showsPrompt            show the exact text the model is sent (GET /api/prompt)
 //   preview(box, item, c)  the "Input" line of "what will run" (true = handled)
 //   batchTotal(c)          outputs to count when the worker has not said yet
@@ -72,8 +74,9 @@ function fillExamples(s) {
   const mine = all.filter((x) => x.tier === "upload" && !s.inputs.includes(x.id));
   group("Planned for this part", planned.map((x) => ["input:" + x.id, describe(x)]));
   group("Other examples (rehearsed)", others.map((x) => ["input:" + x.id, describe(x)]));
-  group("Uploaded pictures (live only)", mine.map((x) => ["input:" + x.id, x.label]));
+  group(opView(s.task).mineLabel || "Your own (live only)", mine.map((x) => ["input:" + x.id, x.label]));
   document.getElementById("upload-box").hidden = !opView(s.task).uploads;
+  document.getElementById("room-box").hidden = !opView(s.task).rooms;
   const canType = (cfg.inputs[s.task] || []).some((x) => x.id === "live");
   if (canType) {
     group("Spare prompts", spares.map((p, i) => ["spare:" + i, p]));
@@ -96,6 +99,7 @@ function onChoice() {
   document.getElementById("live-box").hidden = !live;
   if (live && c.prompt != null) document.getElementById("prompt").value = c.prompt;
   say("mod-msg", "");
+  if (opView(seg().task).rooms) syncRoomDefaults();
   loadPlan();
 }
 
@@ -342,6 +346,7 @@ OPERATOR_VIEW.t2i = {
 OPERATOR_VIEW.i23d = {
   describe: (x) => `${x.label}${x.tier ? " (" + x.tier + ")" : ""}`,
   uploads: true,
+  mineLabel: "Uploaded pictures (live only)",
   preview(box, item) {
     if (!(item.input || item.input_url)) return false;
     box.append(document.createTextNode(item.tier === "upload" ? `Your picture: ${item.label} (live only: no recording)`
@@ -404,13 +409,122 @@ OPERATOR_VIEW.llm = { showsPrompt: true };
 // ---------------------------------------------------------------- Task 8: scene construction
 OPERATOR_VIEW.layout = {
   showsPrompt: true,
+  rooms: true,
+  mineLabel: "Your rooms (live only)",
   preview(box, item, c) {
     if (!item.floor_plan) return false;
-    box.append(document.createTextNode(item.label));
+    box.append(document.createTextNode(item.tier === "upload" ? `${item.label} (live only: no recording)` : item.label));
     loadLayoutView(c, box);
     return true;
   },
 };
+
+// The operator's own room: an outline typed in metres. The conductor checks it (and may tidy it:
+// drop a repeated corner, move the door onto its wall); the preview shows the room as it will run.
+// An empty field takes the selected room's value, shown greyed in the field (syncRoomDefaults).
+let roomSeq = 0;           // ignore previews that arrive after a newer edit
+let roomTimer = null;
+let roomDefaults = { corners: "", door: "", pieces: "" };
+const nums = (text) => (String(text).match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+const pairs = (list) => list.map((p) => p.join(",")).join("  ");
+const field = (id, fallback) => document.getElementById(id).value.trim() || fallback;
+
+// The defaults follow the room chosen above; the room type follows it until the operator picks one.
+function syncRoomDefaults() {
+  const item = ((cfg && cfg.inputs.layout) || []).find((x) => x.id === choice().inputId && x.floor_plan);
+  const pieces = document.getElementById("room-pieces");
+  roomDefaults = item ? { corners: pairs(item.floor_plan), door: item.door ? item.door.join(",") : "none",
+    pieces: String(item.max_objects || pieces.dataset.fallback || "") }
+    : { corners: "", door: "", pieces: pieces.dataset.fallback || "" };
+  document.getElementById("room-corners").placeholder = roomDefaults.corners || "0,0  4,0  4,3  0,3";
+  document.getElementById("room-door").placeholder = roomDefaults.door || "1,0";
+  pieces.placeholder = roomDefaults.pieces;
+  const type = document.getElementById("room-type");
+  if (item && !type.dataset.touched) type.value = item.room_type;
+  if (document.getElementById("room-form").open) onRoomEdit();
+}
+
+function roomBody(save) {
+  const corners = nums(field("room-corners", roomDefaults.corners));
+  if (corners.length % 2) throw new Error("Each corner needs two numbers, x,y.");
+  const door = nums(field("room-door", roomDefaults.door));     // "none": no door
+  if (door.length && door.length !== 2) throw new Error("The door needs two numbers, x,y (or none).");
+  const pieces = field("room-pieces", roomDefaults.pieces);
+  return { save, room_type: document.getElementById("room-type").value,
+    label: document.getElementById("room-label").value,
+    floor_plan: corners.flatMap((v, i) => (i % 2 ? [] : [[v, corners[i + 1]]])),
+    door: door.length ? door : null, max_objects: pieces ? Number(pieces) : null };
+}
+
+async function previewRoom() {
+  const my = ++roomSeq;
+  const box = document.getElementById("room-preview");
+  if (!field("room-corners", roomDefaults.corners)) { box.replaceChildren(); say("room-msg", ""); return; }
+  try {
+    const v = await api("/api/layout/room", roomBody(false));
+    if (my !== roomSeq) return;
+    box.replaceChildren(planSvg(v), el("div", "muted", v.ask));
+    say("room-msg", v.warnings.length ? v.warnings.join(" ") : "This room can run.", v.warnings.length ? "warn" : "up");
+  } catch (e) {
+    if (my !== roomSeq) return;
+    box.replaceChildren();
+    say("room-msg", e.message, "down");
+  }
+}
+
+function onRoomEdit() {
+  clearTimeout(roomTimer);
+  roomTimer = setTimeout(previewRoom, 300);
+}
+
+async function addRoom() {
+  try {
+    const item = await api("/api/layout/room", roomBody(true));
+    const list = cfg.inputs.layout = (cfg.inputs.layout || []).filter((x) => x.id !== item.id);
+    list.push(item);
+    fillExamples(seg());
+    document.getElementById("example").value = "input:" + item.id;
+    onChoice();
+    say("room-msg", `Added “${item.label}”: it is selected above. It runs live only (no recording).`
+      + (item.warnings.length ? " " + item.warnings.join(" ") : ""), item.warnings.length ? "warn" : "up");
+  } catch (e) {
+    say("room-msg", e.message, "down");
+  }
+}
+
+function copySelectedRoom() {
+  const item = (cfg.inputs.layout || []).find((x) => x.id === choice().inputId);
+  if (!item || !item.floor_plan) return say("room-msg", "Choose a room above first.", "down");
+  document.getElementById("room-type").value = item.room_type;
+  document.getElementById("room-corners").value = pairs(item.floor_plan);
+  document.getElementById("room-door").value = item.door ? item.door.join(",") : "";
+  document.getElementById("room-pieces").value = item.max_objects || "";
+  document.getElementById("room-label").value = "";
+  previewRoom();
+}
+
+async function loadRoomRules() {
+  try {
+    const r = await (await fetch("/api/layout/rules")).json();
+    const sel = document.getElementById("room-type");
+    sel.replaceChildren(...r.room_types.map((t) => { const o = el("option", null, t.replace(/_/g, " ")); o.value = t; return o; }));
+    const pieces = document.getElementById("room-pieces");
+    pieces.max = r.max_objects;
+    pieces.dataset.fallback = r.default_objects;
+    if (cfg) syncRoomDefaults();
+    const rules = [
+      ["Corners", `3 to ${r.max_corners}, in order round the room, no crossing walls`],
+      ["Size", `${r.min_side} to ${r.max_side} m each way, at least ${r.min_area} m² of floor; walls at least ${r.min_wall} m`],
+      ["Walls", "Beds, shelves and other wall pieces stand only against walls running north-south or east-west; "
+        + "an angled wall is kept clear"],
+      ["Empty fields", "Take the selected room's corners, door and pieces (shown greyed in each field)"],
+      ["Door", `On a straight wall, at least ${r.door_margin} m from its ends; none for a room without one`],
+      ["Pieces", `1 to ${r.max_objects}`],
+      ["On stage", "Live only: there is no rehearsal recording, so a failed machine shows its error"],
+    ];
+    document.getElementById("room-rules").replaceChildren(...rules.flatMap(([a, b]) => [el("dt", null, a), el("dd", null, b)]));
+  } catch (e) { /* the form still works; the rules are advice */ }
+}
 
 // The plan thumbnail needs the wall names, which the conductor derives (same as the stage header).
 async function loadLayoutView(c, box) {
@@ -464,6 +578,14 @@ fetch("/api/config").then((r) => r.json()).then(async (c) => {
 document.getElementById("example").onchange = onChoice;
 document.getElementById("upload").onchange = onUpload;
 loadUploadSpec();
+for (const id of ["room-type", "room-corners", "room-door", "room-pieces", "room-label"]) {
+  document.getElementById(id).addEventListener("input", onRoomEdit);
+}
+document.getElementById("room-type").addEventListener("change", (ev) => { ev.target.dataset.touched = "1"; });
+document.getElementById("room-form").addEventListener("toggle", (ev) => { if (ev.target.open) previewRoom(); });
+document.getElementById("room-add").onclick = addRoom;
+document.getElementById("room-copy").onclick = copySelectedRoom;
+loadRoomRules();
 document.getElementById("start").onclick = start;
 document.getElementById("prepare").onclick = () =>
   api("/api/prepare", { segment_id: segId }).then(() => say("run-msg", "Loading the model on every machine…"))

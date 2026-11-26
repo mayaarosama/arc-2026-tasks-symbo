@@ -34,7 +34,7 @@ Skips in the default suite:
 | Area | Test file | Covers |
 |---|---|---|
 | Shared modules | `test_shared_modules.py` | Moderation, logging, wire schemas, weights-on-disk, replay table, `Clock` / `MemoryMeter`, `JobContext`, OOM detection, backend registry |
-| Conductor | `test_conductor_unit.py` | Config merge and validation, model picks, `_job_request` for every task, `_final_seconds`, plan, fallback to replay, uploads, prepare, every `/api` route |
+| Conductor | `test_conductor_unit.py` | Config merge and validation, model picks, `_job_request` for every task, `_final_seconds`, plan, fallback to replay, uploads, the operator's own room (checks and refusals), prepare, every `/api` route |
 | Worker | `test_worker_unit.py` | Config loading, per-task settings echo, `save_upload` guards, `ModelManager` refusals, `/health` `/env` `/files` `/load` `/unload`, auth token |
 | Real backends (stand-in libraries) | `test_backends_unit.py` | See the breakdown below |
 | Scripts | `test_scripts.py` | `--help` of every Python script, `bash -n` of every shell script, the pure helpers, determinism of the generated data files |

@@ -130,6 +130,15 @@ layout:
     library: [bookshelf]
     study: [desk]
     dining_room: [dining_table]
+  custom:                          # the operator's own room (conductor/tasks/layout.py check_room)
+    max_corners: 12                # more corners make a long prompt and short walls
+    min_side: 2.0                  # metres, each of east-west and north-south
+                                   # (the most is mask_metres: LayoutGPT's floor mask covers that square)
+    min_wall: 0.3                  # metres: the shortest wall
+    min_area: 4.0                  # square metres
+    door_margin: 0.45              # metres from the door to its wall's ends (the stage draws a 0.9 m door)
+    max_objects: 14                # pieces (the stage rooms ask for 8-10)
+    label_chars: 40
 
 mock:                              # mock workers (worker config mock: true): invented timings, never results
   t2i_step_seconds: {sd35-large: 1.25, sd35-large-turbo: 1.25, sd15: 0.15}   # per step, 1024², mock_speed 1

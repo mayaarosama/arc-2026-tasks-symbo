@@ -18,7 +18,7 @@ from arcdemo.conductor.app import create_app
 from arcdemo.conductor.config import DemoConfig, _load_yaml
 from arcdemo.conductor.core import Conductor
 from arcdemo.conductor.tasks.i23d import add_upload
-from arcdemo.conductor.tasks.layout import layout_prompt_text, layout_summary, layout_view
+from arcdemo.conductor.tasks.layout import add_room, check_room, layout_prompt_text, layout_summary, layout_view
 from tests.helpers import CONFIG, ROOT
 
 
@@ -255,6 +255,50 @@ def test_add_upload_offers_the_picture_and_survives_a_restart(cond, offline_cfg)
     assert any(x["id"] == item["id"] for x in offline_cfg.inputs["i23d"])
 
 
+BOX = [[0, 0], [4, 0], [4, 3], [0, 3]]
+
+
+def test_own_room_is_tidied_and_described():
+    item, warnings = check_room({"room_type": "bedroom", "floor_plan": [[1, 1], [3, 1], [5, 1], [5, 4], [1, 4], [1, 4]],
+                                 "door": [2, 1.1], "max_objects": 8})
+    assert item["floor_plan"] == BOX and item["door"] == [1, 0]     # moved to start at 0; corners tidied
+    assert item["id"].startswith("my-") and item["tier"] == "upload" and item["label"] == "Your bedroom · 4 × 3 m"
+    assert len(warnings) == 4      # repeated corner, mid-wall corner, moved to (0, 0), door onto its wall
+    assert layout_view(item)["door_wall"] == "south"
+    assert check_room({"room_type": "bedroom", "floor_plan": BOX, "door": [1, 0], "max_objects": 8})[0]["id"] == item["id"]
+    near_end, _ = check_room({"room_type": "study", "floor_plan": BOX, "door": [4, 0.1]})
+    assert near_end["door"] == [4, 0.45] and near_end["max_objects"] == 10   # kept off the corner; default pieces
+
+
+@pytest.mark.parametrize("body, reason", [
+    ({"room_type": "garage", "floor_plan": BOX}, "Choose a room type"),
+    ({"floor_plan": [[0, 0], [4, 3], [4, 0], [0, 3]]}, "crosses itself"),
+    ({"floor_plan": [[0, 0], [4, 0]]}, "at least three corners"),
+    ({"floor_plan": [[0, 0], [1, 0], [1, 1], [0, 1]]}, "at least 2 m each way"),
+    ({"floor_plan": [[0, 0], [9, 0], [9, 3], [0, 3]]}, "at most 8 m"),
+    ({"floor_plan": [[0, 0], [4, 0], [4, 0.1], [4.2, 0.1], [4.2, 3], [0, 3]]}, "shorter than"),
+    ({"floor_plan": [[0, 0], [4, 1], [3, 4], [-1, 3]]}, "at least one straight wall"),
+    ({"floor_plan": [[0, 0], [8, 0], [8, 0.5], [7, 0.5], [7, 1], [6, 1], [6, 1.5], [5, 1.5], [5, 2], [4, 2],
+                     [4, 2.5], [3, 2.5], [3, 3], [0, 3]]}, "at most 12 corners"),
+    ({"floor_plan": BOX, "door": [2, 1.5]}, "not on a straight wall"),
+    ({"floor_plan": BOX, "max_objects": 40}, "from 1 to 14"),
+    ({"floor_plan": [[0, 0], [4, 0], [4, float("nan")], [0, 3]]}, "two numbers"),
+])
+def test_own_room_refusals_say_why(body, reason):
+    with pytest.raises(ValueError, match=reason):
+        check_room({"room_type": "bedroom", **body})
+
+
+def test_add_room_offers_it_and_survives_a_restart(cond, offline_cfg):
+    item = add_room(cond, {"room_type": "library", "floor_plan": BOX, "label": "Our <b>foyer</b>"})
+    assert item["label"] == "Our b foyer b" and any(x["id"] == item["id"] for x in offline_cfg.inputs["layout"])
+    offline_cfg.inputs["layout"] = [x for x in offline_cfg.inputs["layout"] if x["id"] != item["id"]]
+    Conductor(offline_cfg)
+    assert offline_cfg.input("layout", item["id"])["floor_plan"] == BOX
+    job = cond._job_request("layout", segment_of(offline_cfg, "layout")["protocol"], item, {"model": "x"}, None)
+    assert job["floor_plan"] == BOX and job["room_type"] == "library"
+
+
 def test_prepare_against_dead_workers_reports_errors(cond, offline_cfg):
     seg = segment_of(offline_cfg, "t2i")
 
@@ -320,6 +364,20 @@ def test_layout_routes(api, offline_cfg):
     assert cat["assets_url"] == "/layout-assets/" and cat["furniture"]
     model = next(iter(cat["furniture"].values()))["model"]
     assert api.get(f"/layout-assets/{model}").status_code == 200
+
+
+def test_own_room_routes(api, offline_cfg):
+    rules = api.get("/api/layout/rules").json()
+    assert "bedroom" in rules["room_types"] and rules["max_objects"] >= rules["default_objects"]
+    body = {"room_type": "bedroom", "floor_plan": BOX, "door": [1, 0]}
+    v = api.post("/api/layout/room", json={**body, "save": False}).json()
+    assert v["walls"] and v["ask"].startswith("Furnish this") and v["warnings"] == []
+    assert not any(x["id"] == v["id"] for x in offline_cfg.inputs["layout"])       # a preview adds nothing
+    r = api.post("/api/layout/room", json=body)
+    assert r.status_code == 200 and any(x["id"] == r.json()["id"] for x in offline_cfg.inputs["layout"])
+    assert api.get("/api/layout_view", params={"input_id": r.json()["id"]}).json()["door_wall"] == "south"
+    bad = api.post("/api/layout/room", json={**body, "door": [2, 1.5]})
+    assert bad.status_code == 422 and "straight wall" in bad.json()["detail"]
 
 
 def test_model_route_errors(api, offline_cfg):
