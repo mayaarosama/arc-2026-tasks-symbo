@@ -32,7 +32,7 @@ cd $DEMO
 bash scripts/gpu/setup_gpu_machine.sh --machine workstation      # or: --machine dgx
 ```
 
-It checks free disk and GPU memory before each model download, and skips a model that doesn't fit. It stops early only for something you must fix yourself: system packages or the CUDA toolkit (these need sudo), a missing `config.txt`, or a `git pull` that conflicts. Any other failure is recorded, the steps that depend on it are skipped, and the run goes on. The report is `results/setup-report-latest.md`: what needs your action, then every step, model, offline check and worker that could not run. Options: `--show-only` (show models only), `--no-start` (don't start the workers), `--conductor` (also start the conductor here). Running it again is safe.
+It checks free disk and GPU memory before each model download, and skips a model that doesn't fit. It stops early only for something you must fix yourself: system packages or the CUDA toolkit (these need sudo), or a missing `config.txt`. It never runs `git pull`, so it cannot overwrite local changes. Any other failure is recorded, the steps that depend on it are skipped, and the run goes on. The report is `results/setup-report-latest.md`: what needs your action, then every step, model, offline check and worker that could not run. Options: `--show-only` (show models only), `--no-start` (don't start the workers), `--conductor` (also start the conductor here). Running it again is safe.
 
 ## 1. Prerequisites
 

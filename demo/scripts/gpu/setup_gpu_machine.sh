@@ -4,12 +4,12 @@
 #   scripts/gpu/setup_gpu_machine.sh --machine workstation
 #   scripts/gpu/setup_gpu_machine.sh --machine dgx --show-only --no-start
 #
-# Steps: checks -> git pull -> venvs -> GPU check -> llama.cpp -> capacity check + downloads ->
+# Steps: checks -> venvs -> GPU check -> llama.cpp -> capacity check + downloads ->
 # offline check -> start workers (-> conductor, with --conductor). Every step is safe to re-run:
 # what is already there is reused, not rebuilt or downloaded again.
 #
 # It stops early ONLY for something you must fix by hand (system packages or the CUDA toolkit
-# that need sudo, the secrets file, a git pull that conflicts). Any other failure is recorded, the
+# that need sudo, the secrets file). Any other failure is recorded, the
 # steps that depend on it are skipped, and the run goes on. Either way it writes a report:
 #   results/setup-<time>/report.md   (also copied to results/setup-report-latest.md)
 #
@@ -19,10 +19,10 @@
 #   --no-start                  set up and check, but do not start the workers
 #   --conductor                 also set up and start the conductor here (config/demo.yaml, CONDUCTOR_PORT),
 #                               with the cut-out model for uploaded pictures (176 MB, runs on the CPU)
-#   --no-pull                   skip git pull
 #   --reserve-gb N              disk to keep free after downloads (default 10)
 # Env: PY (default python3.11, else python3.10), SECRETS (default demo/config.txt, gitignored).
 # Secrets are never printed. Downloads need network; the offline check and workers run offline.
+# It never updates the repo (no git pull): update it yourself when you choose to.
 set -uo pipefail
 
 DEMO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -45,18 +45,15 @@ declare -A PORT=(); ports_of PORT "$WORKER_PORTS"
 declare -A VENV=([t2i]=.venv-t2i [i23d]=.venv-i23d [music]=.venv-music [llm]=.venv-llm [layout]=.venv-llm)
 declare -A BROKEN=()
 
-MACHINE="" SHOW_ONLY=0 START=1 CONDUCTOR=0 PULL=1 RESERVE=10 RUN=""
-ORIG_ARGS=("$@")
+MACHINE="" SHOW_ONLY=0 START=1 CONDUCTOR=0 RESERVE=10
 while [ $# -gt 0 ]; do
     case "$1" in
         --machine) MACHINE="${2:-}"; shift ;;
         --show-only) SHOW_ONLY=1 ;;
         --no-start) START=0 ;;
         --conductor) CONDUCTOR=1 ;;
-        --no-pull) PULL=0 ;;
         --reserve-gb) RESERVE="${2:-10}"; shift ;;
-        --run-dir) RUN="${2:-}"; shift ;;        # internal: continue a run after git pull re-exec
-        -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
         *) echo "unknown option: $1 (see --help)" >&2; exit 2 ;;
     esac
     shift
@@ -68,7 +65,7 @@ cd "$DEMO" || exit 2
 # A shell that started workers by hand (README) still has offline mode on, and the downloads need
 # the network. The offline check and the workers turn it on again for themselves.
 unset HF_HUB_OFFLINE TRANSFORMERS_OFFLINE HF_DATASETS_OFFLINE
-if [ -z "$RUN" ]; then RUN="results/setup-$(date +%Y%m%d-%H%M%S)"; fi
+RUN="results/setup-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$RUN"
 STEPS="$RUN/steps.tsv" REPORT="$RUN/report.md"
 touch "$STEPS"
@@ -163,26 +160,6 @@ load_secrets() {
         "Add a line HF_TOKEN=hf_... (a read token from huggingface.co/settings/tokens)."
     echo "secrets: HF_TOKEN set, ARC_DEMO_TOKEN $([ -n "${ARC_DEMO_TOKEN:-}" ] && echo set || echo 'EMPTY (workers accept anyone)')"
     [ -n "${ARC_DEMO_TOKEN:-}" ] || record "secrets" "" warning "ARC_DEMO_TOKEN is empty: workers will accept requests from anyone on the network"
-}
-
-update_repo() {
-    local before after
-    before="$(git -C "$REPO" rev-parse HEAD)"
-    if ! git -C "$REPO" pull --ff-only; then
-        exec 1>&3 2>&4
-        git -C "$REPO" status --short | head -n 20 >&3
-        need_input "git pull failed (local changes that would be overwritten, or a diverged branch; see above)." \
-            "Keep your change and update: cd $REPO && git stash && git pull && git stash apply" \
-            "Or skip updating: run again with --no-pull"
-    fi
-    after="$(git -C "$REPO" rev-parse HEAD)"
-    if [ "$before" != "$after" ]; then
-        echo "updated $before -> $after; restarting with the new version of this script"
-        record "git pull" "" ok "updated to $(git -C "$REPO" rev-parse --short HEAD)"
-        exec 1>&3 2>&4
-        exec bash "$DEMO/scripts/gpu/setup_gpu_machine.sh" "${ORIG_ARGS[@]}" --no-pull --run-dir "$RUN"
-    fi
-    echo "already up to date at $(git -C "$REPO" rev-parse --short HEAD)"
 }
 
 
@@ -549,7 +526,6 @@ main() {
     say "GPU machine setup: $MACHINE   (logs and report: $DEMO/$RUN)"
     run_step "checks" "" preflight
     run_step "secrets" "" load_secrets
-    if [ $PULL = 1 ]; then run_step "git pull" "" update_repo || true; fi
 
     run_step "venv t2i" t2i venv_t2i     || broken t2i "venv t2i failed"
     run_step "venv i23d" i23d venv_i23d  || broken i23d "venv i23d failed"

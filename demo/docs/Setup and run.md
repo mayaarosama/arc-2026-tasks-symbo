@@ -78,7 +78,7 @@ every step below and starts the five workers:
 ```bash
 bash scripts/gpu/setup_gpu_machine.sh --machine workstation    # or --machine dgx
 #   --show-only  only config/demo.yaml models    --no-start  set up and check only
-#   --conductor  also start the conductor here   --no-pull   skip git pull
+#   --conductor  also start the conductor here
 ```
 
 What it does, in order:
@@ -92,8 +92,9 @@ Every step reuses what is already there, so re-running it is safe.
 It stops early only for fixes that need you:
 - sudo packages;
 - the CUDA 12.8 toolkit;
-- the secrets file;
-- a `git pull` conflict.
+- the secrets file.
+
+It never runs `git pull`, so it cannot overwrite your local changes; update the repo yourself when you want to.
 
 Any other failure is recorded, the steps that depend on it are skipped, and the run goes on. The report,
 `results/setup-report-latest.md`, lists what needs your action and every step, model, offline check
