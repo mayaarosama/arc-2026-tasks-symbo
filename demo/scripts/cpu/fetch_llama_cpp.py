@@ -1,6 +1,6 @@
 """Fetch the pinned llama.cpp CPU release for the CPU box (Windows or Linux x64), offline afterwards.
 
-    python scripts/cpu/fetch_llama_cpp.py            # -> third_party/llama.cpp/bin/llama-server(.exe)
+    python -m scripts.cpu.fetch_llama_cpp            # -> third_party/llama.cpp/bin/llama-server(.exe)
 
 The GPU machines build the same tag with CUDA (scripts/gpu/setup_gpu_machine.sh); the CPU box uses
 llama.cpp's own prebuilt CPU build of that tag, so every machine runs the same release. Safe to
@@ -18,11 +18,11 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-TAG = "b12608"                       # the same release as LLAMA_TAG in scripts/gpu/setup_gpu_machine.sh
-ASSETS = {                           # release file -> its size in bytes (a truncated download is refused)
-    "win": (f"llama-{TAG}-bin-win-cpu-x64.zip", 25_009_019),
-    "linux": (f"llama-{TAG}-bin-ubuntu-x64.tar.gz", 23_185_237),
-}
+from scripts.common.settings import SCRIPTS, VERSIONS
+
+TAG = VERSIONS["LLAMA_TAG"]          # config/versions.env: the same release on every machine
+ASSETS = {os_: (name.format(tag=TAG), size)      # release file -> its size in bytes (a truncated download
+          for os_, (name, size) in SCRIPTS.fetch_llama_cpp.assets.items()}   # is refused); config/scripts.yaml
 DEMO = Path(__file__).resolve().parents[2]
 BIN = DEMO / "third_party" / "llama.cpp" / "bin"
 
@@ -44,7 +44,7 @@ def main() -> int:
         print(f"llama-server {TAG} already installed: {exe}")
         return 0
     name, size = ASSETS[kind]
-    url = f"https://github.com/ggml-org/llama.cpp/releases/download/{TAG}/{name}"
+    url = f"{VERSIONS['LLAMA_REPO']}/releases/download/{TAG}/{name}"
     with tempfile.TemporaryDirectory() as tmp:
         archive = Path(tmp) / name
         print(f"downloading {url}")

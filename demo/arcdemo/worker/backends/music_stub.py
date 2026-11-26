@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
+from ...defaults import DEFAULTS
 from ...schemas import JobRequest
 from .base import Backend, JobContext
 
@@ -47,7 +48,7 @@ class MusicStub(Backend):
                 return
 
 
-def write_tone(path, seconds: float = 5, sr: int = 44100, seed: int = 0) -> None:
+def write_tone(path, seconds: float = 5, sr: int = DEFAULTS.music.sample_rate, seed: int = 0) -> None:
     """Placeholder track: a short seeded melody, 44.1 kHz stereo WAV."""
     rng = np.random.default_rng(seed)
     t = np.arange(int(seconds * sr)) / sr

@@ -18,18 +18,21 @@ import os
 
 from PIL import Image
 
+from ...defaults import DEFAULTS
 from ...schemas import JobRequest
 from ..metrics import cuda_sync
 from .base import Backend, JobContext
 
-_T2_PIPELINE_TYPE = {512: "512", 1024: "1024_cascade", 1536: "1536_cascade"}
+_T2_PIPELINE_TYPE = {512: "512", 1024: "1024_cascade", 1536: "1536_cascade"}   # TRELLIS.2's own names
+T2 = DEFAULTS.i23d.trellis2             # defaults when the job does not set them: config/defaults.yaml i23d
+T1 = DEFAULTS.i23d.trellis1
 
 
 def _open_rgba(path: str) -> Image.Image:
     img = Image.open(path)
     if img.mode != "RGBA":
         raise ValueError(f"{path}: expected an RGBA render with alpha (got {img.mode}); "
-                         "re-run scripts/prepare_gso.py")
+                         "re-run scripts/i23d/prepare_gso.py")
     return img
 
 
@@ -37,26 +40,31 @@ class Trellis2(Backend):
     task = "i23d"
 
     def load(self) -> None:
+        # Deferred imports (an exception to imports-at-the-top): TRELLIS reads these environment
+        # variables when it is imported, and Trellis1 / Trellis2 need different ones.
         os.environ.setdefault("OPENCV_IO_ENABLE_OPENEXR", "1")
         os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
         from trellis2.pipelines import Trellis2ImageTo3DPipeline
 
-        pipe = Trellis2ImageTo3DPipeline.from_pretrained(self.repo)
+        self.model = self._build(Trellis2ImageTo3DPipeline)   # no local here: see StableFast3D.load
+
+    def _build(self, pipeline_cls):
+        pipe = pipeline_cls.from_pretrained(self.repo)
         # low_vram=True (upstream default) shuttles sub-models between CPU and GPU, which costs
         # time. Turn it off where memory is plentiful (DGX) via model_overrides in the worker config.
         if "low_vram" in self.spec:
             pipe.low_vram = bool(self.spec["low_vram"])
         pipe.cuda()
-        self.model = pipe
+        return pipe
 
     def describe(self, req: JobRequest) -> dict:
-        res = req.resolution or 1024
-        return {"pipeline_type": _T2_PIPELINE_TYPE.get(res, "1024_cascade"),
+        res = req.resolution or T2.resolution
+        return {"pipeline_type": _T2_PIPELINE_TYPE.get(res, _T2_PIPELINE_TYPE[T2.resolution]),
                 "low_vram": getattr(self.model, "low_vram", None),
-                "texture_size": req.texture_size or 2048, "decimation": req.decimation or 300000}
+                "texture_size": req.texture_size or T2.texture_size, "decimation": req.decimation or T2.decimation}
 
     def generate(self, req: JobRequest, ctx: JobContext) -> None:
-        import o_voxel
+        import o_voxel  # deferred: part of the TRELLIS.2 install, imported after load() set its environment
 
         img = _open_rgba(req.image_path)
         s = self.describe(req)
@@ -70,12 +78,12 @@ class Trellis2(Backend):
 
         ctx.progress(stage="export")
         t_exp = ctx.clock.now()
-        mesh.simplify(16777216)  # nvdiffrast limit, per the upstream example
+        mesh.simplify(T2.simplify_faces)  # nvdiffrast limit, per the upstream example
         glb = o_voxel.postprocess.to_glb(
             vertices=mesh.vertices, faces=mesh.faces, attr_volume=mesh.attrs, coords=mesh.coords,
             attr_layout=mesh.layout, voxel_size=mesh.voxel_size,
             aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
-            decimation_target=s["decimation"],   # 1M upstream; 300k keeps the GLB light for the browser
+            decimation_target=s["decimation"],
             texture_size=s["texture_size"],
             remesh=True, remesh_band=1, remesh_project=0, verbose=False)
         path = ctx.output_path(".glb")
@@ -88,19 +96,23 @@ class Trellis1(Backend):
     task = "i23d"
 
     def load(self) -> None:
+        # Deferred import: TRELLIS v1 reads SPCONV_ALGO when it is imported.
         os.environ.setdefault("SPCONV_ALGO", "native")
         from trellis.pipelines import TrellisImageTo3DPipeline
 
-        pipe = TrellisImageTo3DPipeline.from_pretrained(self.repo)
+        self.model = self._build(TrellisImageTo3DPipeline)    # no local here: see StableFast3D.load
+
+    def _build(self, pipeline_cls):
+        pipe = pipeline_cls.from_pretrained(self.repo)
         pipe.cuda()
-        self.model = pipe
+        return pipe
 
     def describe(self, req: JobRequest) -> dict:
-        return {"ss_steps": req.ss_steps or 12, "slat_steps": req.slat_steps or 12,
-                "texture_size": req.texture_size or 1024, "simplify": 0.95}
+        return {"ss_steps": req.ss_steps or T1.ss_steps, "slat_steps": req.slat_steps or T1.slat_steps,
+                "texture_size": req.texture_size or T1.texture_size, "simplify": T1.simplify}
 
     def generate(self, req: JobRequest, ctx: JobContext) -> None:
-        from trellis.utils import postprocessing_utils
+        from trellis.utils import postprocessing_utils  # deferred: see load()
 
         img = _open_rgba(req.image_path)
         s = self.describe(req)
@@ -108,8 +120,8 @@ class Trellis1(Backend):
         ctx.progress(stage="generating")
         out = self.model.run(
             img, seed=req.seed, formats=["gaussian", "mesh"],
-            sparse_structure_sampler_params={"steps": s["ss_steps"], "cfg_strength": 7.5},
-            slat_sampler_params={"steps": s["slat_steps"], "cfg_strength": 3.0})
+            sparse_structure_sampler_params={"steps": s["ss_steps"], "cfg_strength": T1.ss_cfg},
+            slat_sampler_params={"steps": s["slat_steps"], "cfg_strength": T1.slat_cfg})
         cuda_sync(self.devices)
         ctx.result.generation_seconds = round(ctx.clock.now(), 3)
         if ctx.cancel.is_set():

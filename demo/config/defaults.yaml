@@ -1,0 +1,147 @@
+# Runtime defaults: every tunable number, limit and timeout the code uses, in one place.
+#
+# Loaded once by arcdemo/defaults.py and validated against its schema: an unknown key or a value of the
+# wrong type stops the process at startup with the key's name. Times are in seconds, sizes in the unit
+# the key names. Per-show and per-machine choices stay where they were:
+#   config/demo*.yaml     run of show, machines, settings matrix (these win over the conductor defaults below)
+#   config/worker-*.yaml  per machine: devices, slots, llama_args, cpu_threads ... (win over llm / layout below)
+#   config/models.yaml    the model catalogue
+# Prompts are text files in data/prompts/; inputs are JSON files in data/<task>/ (see data/README.md).
+
+conductor:
+  host: 127.0.0.1                  # python -m arcdemo.conductor --host
+  port: 8000                       # python -m arcdemo.conductor --port
+  config: config/demo.yaml         # python -m arcdemo.conductor --config
+  session_dir: session             # when demo.yaml has no session_dir
+  replay_dir: replay               # when demo.yaml has no replay_dir
+  timeout_grace_seconds: 15        # when demo.yaml has none: hard-budget cell silent this long past budget -> replay
+  unreachable_after_seconds: 6     # when demo.yaml has none: lost contact this long mid-run -> replay
+  token_env: ARC_DEMO_TOKEN        # when demo.yaml has none: environment variable holding the shared secret
+  http_timeout_seconds: 5          # every conductor -> worker request unless named below
+  http_connect_seconds: 2
+  health_every_seconds: 2          # /health poll of every worker
+  health_timeout_seconds: 1.5
+  unload_timeout_seconds: 60       # POST /unload while preparing (freeing a big model takes a while)
+  prepare_timeout_seconds: 900     # Load pressed: give up on a machine that has not loaded after this
+  prepare_poll_seconds: 1
+  busy_retry_seconds: 15           # Start right after Stop: retry a 409 (worker still ending) this long
+  busy_retry_every_seconds: 0.5
+  poll_every_seconds: 0.4          # GET /jobs/{id} while a cell runs
+  poll_timeout_seconds: 2.5
+  time_up_slack_seconds: 2         # slow machine past budget: wait this long for its own budget_exceeded
+  file_timeout_seconds: 60         # GET /files/{name} (a 3D mesh can be large)
+  reject_text_chars: 200           # worker's rejection text kept in the cell note
+  error_text_chars: 160            # worker's error text kept in the cell note
+
+stage:                             # sent to the pages by GET /api/config
+  poll_ms: 300                     # stage and operator: GET /api/state
+  operator_poll_ms: 500            # operator: live state table refresh
+  views: [title, round, summary, blank]
+  spare_prompts: data/t2i/live_fallback_prompts.json    # operator page: vetted prompts for Task 1
+
+worker:
+  host: 0.0.0.0                    # python -m arcdemo.worker --host
+  port: 8101                       # python -m arcdemo.worker --port
+  results_dir: results             # when the worker config has none
+  job_history: 100                 # finished jobs kept for GET /jobs/{id}
+  preload_warning_seconds: 0.5     # a job whose load took longer says "model was not preloaded"
+  error_text_chars: 400            # error text kept in a result
+  disk_recheck_seconds: 15         # /health "available": re-scan the weights on disk this often
+  env_hash_exclude: [torch, nvidia-, triton]   # packages that legitimately differ between machines
+  env_report_packages: [diffusers, transformers, accelerate, bitsandbytes]
+  max_upload_mb: 20                # an uploaded input picture (image_b64), after the conductor normalised it
+  torch_compile_threads: 1         # TORCHINDUCTOR_COMPILE_THREADS: 1 = no compile-worker pool (16 processes,
+                                   # ~0.4 GB per t2i worker); the demo never calls torch.compile
+
+moderation:                        # Task 1 live prompt (the terms themselves: config/blocklist.txt)
+  max_prompt_chars: 300
+
+i23d:
+  upload:                          # the operator's own picture (arcdemo/imageprep.py)
+    max_mb: 10                     # file size
+    min_side: 256                  # shortest side: below this there is too little detail to rebuild
+    good_side: 512                 # shortest side we recommend (SF3D's input is 512 px)
+    max_side: 4096                 # longer images are scaled down first (not rejected)
+    out_side: 512                  # what every machine receives
+    fill: 0.85                     # the object's share of the output side (upstream SF3D run.py uses 0.85)
+    min_cover: 0.03                # share of the image that is the object, before cropping
+    max_cover: 0.95
+    edge_px: 2                     # foreground within this many pixels of the border = cropped object
+    small_cover_warning: 0.08      # below this share, warn that the object is small
+    transparent_share: 0.02        # alpha < 128 on more than this share = a real cut-out already
+    label_chars: 40                # upload's label, from its file name
+    extensions: [.png, .jpg, .jpeg, .webp]
+    rules: data/i23d/upload_rules.json   # the requirements shown next to the upload box
+  trellis2:
+    resolution: 1024
+    texture_size: 2048
+    decimation: 300000             # 1M upstream; 300k keeps the GLB light for the browser
+    simplify_faces: 16777216       # nvdiffrast limit, per the upstream example
+  trellis1:
+    ss_steps: 12
+    slat_steps: 12
+    ss_cfg: 7.5
+    slat_cfg: 3.0
+    texture_size: 1024
+    simplify: 0.95
+  sf3d:
+    texture_size: 1024
+
+music:
+  steps: 8                         # the post-trained (ARC) checkpoints are tuned for 8 steps
+  sample_rate: 44100
+  length_s: 30                     # a job without length_s
+
+llm:
+  server_binary: llama-server      # when the worker config has no llama_server
+  slots: 1                         # when the worker config has no llm_slots
+  ctx_per_slot: 2048               # when the worker config has no llm_ctx
+  gpu_layers: 999                  # every layer on the GPU when the worker uses a cuda device
+  read_timeout_seconds: 120        # a stalled stream errors after this
+  connect_timeout_seconds: 5
+  load_timeout_seconds: 900        # llama-server not answering /health after this = load failed
+  stop_timeout_seconds: 15         # terminate, then kill
+  warmup_prompt: Hello             # off the clock, after load
+  warmup_tokens: 8
+
+layout:
+  room_type: bedroom               # a job without room_type
+  max_objects: 10                  # a job / input without max_objects
+  ctx_per_slot: 4096               # when the worker config has no layout_ctx
+  repair_tokens: 40                # one line is 13-16 tokens
+  review_tokens: 200               # up to max_edits edits and "done"
+  max_edits: 6                     # per review round
+  idle_review_rounds: 2            # rounds without a kept edit before the review stops
+  layoutgpt_examples: 4            # LayoutGPT k-similar rooms (8 upstream; 4 fits a 4,096-token slot)
+  exemplars: data/layout/exemplars.json
+  mask_cells: 64                   # LayoutGPT floor mask: cells per side
+  mask_metres: 8.0                 # ... over this square
+  checks:
+    door_clearance: 0.8            # metres kept free in front of the door
+    overlap_share: 0.10            # overlap above this share of the smaller footprint is flagged
+    wall_tolerance: 0.03           # a corner this far outside the outline still counts as inside
+  costs:                           # room cost C for self-correction (layout_prompt.py explains it)
+    flag: 1.0
+    remove: 0.5
+    must_have: 2.0
+  must_have:                       # a room without one of these costs costs.must_have
+    bedroom: [double_bed, single_bed]
+    living_room: [sofa]
+    library: [bookshelf]
+    study: [desk]
+    dining_room: [dining_table]
+
+mock:                              # mock workers (worker config mock: true): invented timings, never results
+  t2i_step_seconds: {sd35-large: 1.25, sd35-large-turbo: 1.25, sd15: 0.15}   # per step, 1024², mock_speed 1
+  t2i_step_default: 0.5
+  i23d_seconds: {trellis2-4b: 30.0, trellis-image-large: 25.0, sf3d: 2.0}
+  i23d_seconds_default: 10.0
+  trellis2_resolution_factor: {512: 0.2, 1024: 1.0, 1536: 3.5}
+  needs_gb: {trellis2-4b: 24, sd35-large: 28, sd35-medium: 17}   # to simulate out-of-memory
+  machine_gb: {dgx: 141, workstation: 16, cpu: 16}
+  cuda_only: [trellis2-4b, trellis-image-large]
+  colours:                         # the placeholder mesh colour per machine (RGBA)
+    dgx: [118, 185, 0, 255]
+    workstation: [74, 168, 255, 255]
+    cpu: [240, 166, 64, 255]
+  token_delay_seconds: 0.025       # llm / layout mock: per token at mock_speed 1, one stream

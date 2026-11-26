@@ -24,12 +24,20 @@ from pathlib import Path
 
 import numpy as np
 
+try:                     # the music venv only: the worker imports this module when a music model loads
+    import soundfile as sf
+    import torch
+    from stable_audio_3 import StableAudioModel
+except ImportError:
+    sf = torch = StableAudioModel = None
+
+from ...defaults import DEFAULTS
 from ...schemas import JobRequest
 from ..metrics import cuda_sync
 from .base import Backend, JobContext
 
-DEFAULT_STEPS = 8          # the post-trained (ARC) checkpoints are tuned for 8 steps
-SAMPLE_RATE = 44100
+DEFAULT_STEPS = DEFAULTS.music.steps          # config/defaults.yaml music (8: what the checkpoints are tuned for)
+SAMPLE_RATE = DEFAULTS.music.sample_rate
 
 
 class StableAudio3(Backend):
@@ -44,8 +52,8 @@ class StableAudio3(Backend):
         return self._device.startswith("cuda") and self.spec.get("dtype", "auto") in ("auto", "fp16")
 
     def load(self) -> None:
-        from stable_audio_3 import StableAudioModel
-
+        if StableAudioModel is None:
+            raise ModuleNotFoundError("stable_audio_3 is not installed in this venv (requirements/music.txt)")
         self.model = StableAudioModel.from_pretrained(self.spec["sa3_name"], device=self._device,
                                                       model_half=self._half)
         self.sample_rate = int(self.model.model_config.get("sample_rate", SAMPLE_RATE))
@@ -60,12 +68,9 @@ class StableAudio3(Backend):
                 "precision": "fp16" if self._half else "fp32"}
 
     def _generate_track(self, req: JobRequest, seed: int, path: Path) -> None:
-        import torch
-
-        length = float(req.length_s or 30)
+        length = float(req.length_s or DEFAULTS.music.length_s)
         kwargs = {}
         if req.mode == "continuation" and req.audio_path:
-            import soundfile as sf
             data, sr = sf.read(req.audio_path, dtype="float32", always_2d=True)   # (samples, ch)
             clip = torch.from_numpy(data.T.copy())
             kwargs = {"inpaint_audio": (sr, clip), "inpaint_mask_start_seconds": data.shape[0] / sr}

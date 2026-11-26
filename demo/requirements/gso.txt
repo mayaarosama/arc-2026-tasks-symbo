@@ -1,4 +1,4 @@
-# Only for scripts/prepare_gso.py (renders the image-to-3D stage inputs, already in data/i23d/).
+# Only for scripts/i23d/prepare_gso.py (renders the image-to-3D stage inputs, already in data/i23d/).
 # Not needed to run the show. pyrender pins PyOpenGL 3.1.0, which fails on texture upload under
 # Python 3.12; 3.1.9 works. pip cannot resolve that pin, so install in two steps, in the conductor venv:
 #   pip install -r requirements/gso.txt

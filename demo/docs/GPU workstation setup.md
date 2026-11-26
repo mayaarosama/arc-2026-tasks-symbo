@@ -32,7 +32,7 @@ cd $DEMO
 bash scripts/gpu/setup_gpu_machine.sh --machine workstation      # or: --machine dgx
 ```
 
-It checks free disk and GPU memory before each model download, and skips a model that doesn't fit. It stops early only for something you must fix yourself: system packages or the CUDA toolkit (these need sudo), a missing `config.txt`, or a `git pull` that conflicts. Any other failure is recorded, the steps that depend on it are skipped, and the run goes on. The report is `results/setup-report-latest.md`: what needs your action, then every step, model, offline check and worker that could not run. Options: `--show-only` (show models only), `--no-start` (don't start the workers), `--conductor` (also start the conductor here). Running it again is safe.
+It checks free disk and GPU memory before each model download, and skips a model that doesn't fit. It stops early only for something you must fix yourself: system packages or the CUDA toolkit (these need sudo), or a missing `config.txt`. It never runs `git pull`, so it cannot overwrite local changes. Any other failure is recorded, the steps that depend on it are skipped, and the run goes on. The report is `results/setup-report-latest.md`: what needs your action, then every step, model, offline check and worker that could not run. Options: `--show-only` (show models only), `--no-start` (don't start the workers), `--conductor` (also start the conductor here). Running it again is safe.
 
 ## 1. Prerequisites
 
@@ -244,7 +244,7 @@ No extra flags are needed. Any `cuda:` device in the worker config makes the wor
 
 ## 5. Download the model weights
 
-`scripts/download_weights.py` reads a config and fetches every model the workstation runs for a task in it, plus that model's encoders. The commands below run it for every task in two configs: `config/demo.yaml` (the show) and `config/demo-full.yaml` (the full model matrix: the larger models that could not be downloaded on the laptop). Weights land in `demo/hf-cache/hub`. Run it with the token loaded from `config.txt`. Any worker env can run it; `.venv-llm` is the lightest.
+`scripts/common/download_weights.py` reads a config and fetches every model the workstation runs for a task in it, plus that model's encoders. The commands below run it for every task in two configs: `config/demo.yaml` (the show) and `config/demo-full.yaml` (the full model matrix: the larger models that could not be downloaded on the laptop). Weights land in `demo/hf-cache/hub`. Run it with the token loaded from `config.txt`. Any worker env can run it; `.venv-llm` is the lightest.
 
 ```bash
 cd $DEMO
@@ -252,10 +252,10 @@ set -a; . ../config.txt; set +a                        # loads HF_TOKEN and ARC_
 CONFIGS="config/demo.yaml config/demo-full.yaml"       # the show, then the full model matrix
 TASKS="t2i i23d music llm layout"
 for c in $CONFIGS; do for t in $TASKS; do
-  .venv-llm/bin/python scripts/download_weights.py --config $c --machine workstation --task $t --dry-run
+  .venv-llm/bin/python -m scripts.common.download_weights --config $c --machine workstation --task $t --dry-run
 done; done                                             # lists the repos first
 for c in $CONFIGS; do for t in $TASKS; do
-  .venv-llm/bin/python scripts/download_weights.py --config $c --machine workstation --task $t \
+  .venv-llm/bin/python -m scripts.common.download_weights --config $c --machine workstation --task $t \
     || echo "!! $c / $t: see the FAILED lines above"
 done; done
 unset HF_TOKEN
@@ -295,11 +295,11 @@ A `401` or `403` on a `stabilityai/*` repo (or on facebook/dinov3-* or briaai/RM
 set -a; source <(tr -d '\r' < ../config.txt); set +a
 
 for c in config/demo.yaml config/demo-full.yaml; do
-  .venv-t2i/bin/python   scripts/download_weights.py --config $c --machine $MACHINE --task t2i
-  .venv-i23d/bin/python  scripts/download_weights.py --config $c --machine $MACHINE --task i23d
-  .venv-music/bin/python scripts/download_weights.py --config $c --machine $MACHINE --task music
-  .venv-t2i/bin/python   scripts/download_weights.py --config $c --machine $MACHINE --task llm     # any env works
-  .venv-t2i/bin/python   scripts/download_weights.py --config $c --machine $MACHINE --task layout
+  .venv-t2i/bin/python -m scripts.common.download_weights --config $c --machine $MACHINE --task t2i
+  .venv-i23d/bin/python -m scripts.common.download_weights --config $c --machine $MACHINE --task i23d
+  .venv-music/bin/python -m scripts.common.download_weights --config $c --machine $MACHINE --task music
+  .venv-t2i/bin/python -m scripts.common.download_weights --config $c --machine $MACHINE --task llm     # any env works
+  .venv-t2i/bin/python -m scripts.common.download_weights --config $c --machine $MACHINE --task layout
 done
 ```
 
@@ -321,11 +321,11 @@ Now prove every worker loads with the network forbidden. This is what runs at th
 cd $DEMO
 unset HF_TOKEN; export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 W=config/worker-workstation.yaml
-.venv-t2i/bin/python   scripts/verify_offline.py --config $W --task t2i
-PYTHONPATH=third_party/stable-fast-3d .venv-i23d/bin/python scripts/verify_offline.py --config $W --task i23d
-.venv-music/bin/python scripts/verify_offline.py --config $W --task music
-.venv-llm/bin/python   scripts/verify_offline.py --config $W --task llm
-.venv-llm/bin/python   scripts/verify_offline.py --config $W --task layout
+.venv-t2i/bin/python -m scripts.common.verify_offline --config $W --task t2i
+PYTHONPATH=third_party/stable-fast-3d .venv-i23d/bin/python -m scripts.common.verify_offline --config $W --task i23d
+.venv-music/bin/python -m scripts.common.verify_offline --config $W --task music
+.venv-llm/bin/python -m scripts.common.verify_offline --config $W --task llm
+.venv-llm/bin/python -m scripts.common.verify_offline --config $W --task layout
 ```
 
 Open the firewall for the conductor, if `ufw` is on: `sudo ufw allow 8101:8105/tcp`. Then confirm the operator laptop resolves `workstation.local`, the name `config/demo.yaml` uses. If not, install `avahi-daemon` or put the IP into `demo.yaml` on the laptop.
@@ -336,10 +336,10 @@ Open the firewall for the conductor, if `ufw` is on: `sudo ufw allow 8101:8105/t
 unset HF_TOKEN
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 
-.venv-t2i/bin/python scripts/verify_offline.py --config config/worker-$MACHINE.yaml --task t2i
+.venv-t2i/bin/python -m scripts.common.verify_offline --config config/worker-$MACHINE.yaml --task t2i
 PYTHONPATH=third_party/stable-fast-3d \
-.venv-i23d/bin/python scripts/verify_offline.py --config config/worker-$MACHINE.yaml --task i23d
-.venv-music/bin/python scripts/verify_offline.py --config config/worker-$MACHINE.yaml --task music
+.venv-i23d/bin/python -m scripts.common.verify_offline --config config/worker-$MACHINE.yaml --task i23d
+.venv-music/bin/python -m scripts.common.verify_offline --config config/worker-$MACHINE.yaml --task music
 ```
 
 ## 7. Run the complete demo
@@ -390,7 +390,7 @@ Open `http://<laptop>:8000/operator`. Its *Workers* panel should show the workst
 | Same answer, different time / Tokens in a minute | seg6, seg7 | llm | Qwen3.5 4B, 1 then 8 streams |
 | Furnish the room / Rooms in a minute | seg8, seg9 | layout | Qwen3.5 4B, 1 then 8 rooms |
 
-Before doors: pick Part 1, load the model, and press **Start** once as the warm-up. Then rehearse the GPU cells so the replay table has records: `python scripts/rehearse.py --segments seg0,seg2,seg3,seg6,seg8 --repeat 3` on the laptop.
+Before doors: pick Part 1, load the model, and press **Start** once as the warm-up. Then rehearse the GPU cells so the replay table has records: `python -m scripts.common.rehearse --segments seg0,seg2,seg3,seg6,seg8 --repeat 3` on the laptop.
 
 **dgx variant (from the INSTRUCTION tab).** That tab starts only three GPU workers (t2i 8101, i23d 8102, music 8103), against `config/worker-$MACHINE.yaml`, and also unsets `SF3D_USE_CPU`. Models keep loading in the background, so ask `/health` again after a minute and `loaded` should list them. If a port doesn't answer, look in `results/stdout-<task>.log`. To stop all three: `pkill -f arcdemo.worker`.
 

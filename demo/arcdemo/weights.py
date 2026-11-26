@@ -1,6 +1,6 @@
 """Which model weights are on this machine's disk (the Hugging Face cache, demo/hf-cache/hub).
 
-Shared by scripts/download_weights.py (what to fetch) and the worker (/health "available"), so
+Shared by scripts/common/download_weights.py (what to fetch) and the worker (/health "available"), so
 the operator page can say "not on this machine" before anyone presses Load.
 """
 from __future__ import annotations

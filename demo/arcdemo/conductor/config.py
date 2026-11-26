@@ -11,6 +11,10 @@ from typing import Any, Optional
 
 import yaml
 
+from ..defaults import DEFAULTS
+from ..layout_prompt import DEFAULT_CATALOG, load_catalog
+from ..schemas import JobRequest
+
 ROOT = Path(__file__).resolve().parents[2]      # demo/
 
 
@@ -31,11 +35,12 @@ class DemoConfig:
         self.models = yaml.safe_load((ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))["models"]
         self.machines: list[dict] = self.raw["machines"]
         self.segments: list[dict] = self.raw["segments"]
-        self.session_dir = (ROOT / self.raw.get("session_dir", "session")).resolve()
-        self.replay_dir = (ROOT / self.raw.get("replay_dir", "replay")).resolve()
-        self.grace = float(self.raw.get("timeout_grace_seconds", 15))
-        self.unreachable_after = float(self.raw.get("unreachable_after_seconds", 6))
-        self.token_env = self.raw.get("token_env", "ARC_DEMO_TOKEN")
+        d = DEFAULTS.conductor              # what demo.yaml may leave out (config/defaults.yaml)
+        self.session_dir = (ROOT / self.raw.get("session_dir", d.session_dir)).resolve()
+        self.replay_dir = (ROOT / self.raw.get("replay_dir", d.replay_dir)).resolve()
+        self.grace = float(self.raw.get("timeout_grace_seconds", d.timeout_grace_seconds))
+        self.unreachable_after = float(self.raw.get("unreachable_after_seconds", d.unreachable_after_seconds))
+        self.token_env = self.raw.get("token_env", d.token_env)
         self.inputs: dict[str, list[dict]] = {}
         for task, rel in (self.raw.get("inputs") or {}).items():
             self.inputs[task] = json.loads((ROOT / rel).read_text(encoding="utf-8"))
@@ -48,12 +53,10 @@ class DemoConfig:
         # draws them with (served from its assets_dir). Every model file must exist.
         self.layout_catalog: dict = {}
         if "layout" in self.inputs:
-            from ..layout_prompt import DEFAULT_CATALOG, load_catalog
             self.layout_catalog = load_catalog(self.raw.get("layout_catalog", DEFAULT_CATALOG), check_models=True)
         self._validate()
 
     def _validate(self) -> None:
-        from ..schemas import JobRequest
         job_fields = set(JobRequest.model_fields)
         errors = []
         for seg in self.segments:

@@ -2,7 +2,8 @@
 
     python -m arcdemo.worker --config config/worker-dgx.yaml --task t2i --port 8101
 
-Endpoints (all require X-Demo-Token when ARC_DEMO_TOKEN is set):
+Endpoints (all require X-Demo-Token when the token variable is set: worker config token_env, else
+config/defaults.yaml conductor.token_env, ARC_DEMO_TOKEN — the same variable the conductor reads):
   GET  /health                 machine, loaded models, busy flag, env hash
   GET  /env                    library versions (the conductor flags mismatches between machines)
   POST /load   {model}         load a model in the background (errors: /env last_error + log)
@@ -19,23 +20,36 @@ import importlib.metadata as md
 import logging
 import os
 import platform
+import subprocess
 import threading
 import time
+import weakref
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
+import psutil
 import yaml
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
 
+try:                     # optional: the llm venv has no torch (llama-server does its GPU work)
+    import torch
+except ImportError:
+    torch = None
+
+from ..defaults import DEFAULTS
+from ..layout_prompt import DEFAULT_CATALOG, load_catalog
 from ..schemas import TERMINAL, HealthInfo, JobRequest, JobResult, LoadRequest
+from ..weights import on_disk
+from . import tasks
 from .backends.base import Backend, JobContext, backend_class, free_memory, is_oom
 from .metrics import Clock
 
 ROOT = Path(__file__).resolve().parents[2]          # demo/
 log = logging.getLogger("arcdemo.worker")
+D = DEFAULTS.worker                     # limits and intervals: config/defaults.yaml
 
 
 def load_worker_config(path: str, tasks: list[str]) -> dict:
@@ -46,9 +60,8 @@ def load_worker_config(path: str, tasks: list[str]) -> dict:
     cfg["models"] = models
     cfg["tasks"] = tasks
     if "layout" in tasks:     # the furniture catalogue the prompt, grammar and room checks use
-        from ..layout_prompt import DEFAULT_CATALOG, load_catalog
         cfg["layout_catalog_sha"] = load_catalog(cfg.get("layout_catalog", DEFAULT_CATALOG))["sha"]
-    cfg["results_dir"] = str((ROOT / cfg.get("results_dir", "results")).resolve())
+    cfg["results_dir"] = str((ROOT / cfg.get("results_dir", D.results_dir)).resolve())
     Path(cfg["results_dir"]).mkdir(parents=True, exist_ok=True)
     return cfg
 
@@ -77,7 +90,7 @@ class ModelManager:
                 raise ValueError(f"model '{key}' is a {spec['task']} model; this worker serves {self.cfg['tasks']}")
             name = spec["backend"]
             if self.cfg.get("mock"):   # music and llm have their own stand-ins (tone, canned text)
-                name = {"music": "music_stub", "llm": "llm_mock", "layout": "layout_mock"}.get(spec["task"], "mock")
+                name = tasks.MOCK_BACKEND[spec["task"]]
             backend = backend_class(name)(key, spec, self.cfg, self.devices_for(key))
             self.loading = key
             log.info("loading %s (%s) on %s", key, name, backend.devices)
@@ -99,14 +112,20 @@ class ModelManager:
         with self.lock:
             keys = [key] if key else [k for k in self.loaded
                                       if not keep_task or self.cfg["models"][k]["task"] != keep_task]
-            gone = []
+            gone, watched, b = [], [], None
             for k in keys:
                 b = self.loaded.pop(k, None)
                 if b is not None:
+                    watched.append((k, _watch(b.model)))
                     b.unload()
                     gone.append(k)
                     log.info("unloaded %s", k)
+            b = None            # this frame must not keep the last backend alive while freeing
             free_memory()
+            for k, ref in watched:
+                if ref is not None and ref() is not None:
+                    log.warning("unloaded %s, but something still references it: its memory is NOT freed "
+                                "(docs/Known issues.md, 'Memory not freed after unload')", k)
             return gone
 
     def ensure(self, key: str) -> Backend:
@@ -117,6 +136,20 @@ class ModelManager:
                 for k in [k for k in self.loaded if k != key]:
                     self.unload(k)
             return self.get(key)
+
+
+def _watch(model) -> Optional[weakref.ref]:
+    """A weak reference to a backend's model (the first pipeline of a list), to check after unload
+    that it was really freed. None for a server process: its memory goes when the process exits."""
+    for obj in ([model] + [x for item in model for x in (item if isinstance(item, tuple) else (item,))]
+                if isinstance(model, (list, tuple)) else [model]):
+        if obj is None or isinstance(obj, (subprocess.Popen, str)):
+            continue
+        try:
+            return weakref.ref(obj)
+        except TypeError:
+            continue
+    return None
 
 
 class Job:
@@ -140,15 +173,13 @@ class JobRunner:
             if self.active is not None and self.active.result.status not in TERMINAL:
                 raise HTTPException(409, f"busy with {self.active.req.run_id}")
             # 0 = throughput run (as many as fit in the budget): nothing is "missing" at the bell
-            requested = {"t2i": max(1, req.batch), "music": 0,
-                         "llm": 0 if req.repeat_until_budget else max(1, req.streams),
-                         "layout": 0 if req.repeat_until_budget else max(1, req.streams)}.get(req.task, 1)
+            requested = tasks.requested(req)
             result = JobResult(run_id=req.run_id, machine=self.cfg["machine"], task=req.task,
                                model=req.model, model_repo=self.cfg["models"].get(req.model, {}).get("repo", ""),
                                input_id=req.input_id, protocol=req.protocol, requested=requested)
             job = Job(req, result)
             self.jobs[req.run_id] = job
-            while len(self.jobs) > 100:
+            while len(self.jobs) > D.job_history:
                 self.jobs.popitem(last=False)
             self.active = job
         log.info("[%s] submit %s model=%s input=%s budget=%s", req.run_id[:6], req.task, req.model,
@@ -167,17 +198,16 @@ class JobRunner:
 
     def _run(self, job: Job) -> None:
         req, r = job.req, job.result
+        failed = False
         try:
-            if req.image_b64:              # an operator upload: write it out before the clock starts
-                req.image_path = str(save_upload(req.image_b64, Path(self.cfg["results_dir"]), req.run_id))
-                req.image_b64 = None
+            tasks.prepare_inputs(req, Path(self.cfg["results_dir"]))   # off the clock (i23d: an upload)
             r.status = "loading"
             t = time.perf_counter()
             backend = self.models.ensure(req.model)
             r.load_seconds = round(time.perf_counter() - t, 3)
-            if r.load_seconds > 0.5:
+            if r.load_seconds > D.preload_warning_seconds:
                 r.message = "model was not preloaded: load time excluded from the clock but logged"
-            r.settings = {**_request_settings(req), **backend.describe(req)}
+            r.settings = {**tasks.settings_echo(req), **backend.describe(req)}
             out_dir = Path(self.cfg["results_dir"])
             ctx = JobContext(req, r, job.clock, out_dir, backend.devices, job.cancel)
             r.status = "running"
@@ -200,11 +230,11 @@ class JobRunner:
             else:
                 r.status = "ok"
         except BaseException as e:  # noqa: BLE001 — every failure must come back as a status
+            failed = True
             r.message = _short(e)
             if is_oom(e):
                 r.status = "out_of_memory"
                 log.warning("[%s] out of memory: %s", req.run_id[:6], r.message)
-                self.models.unload(req.model)
             else:
                 r.status = "error"
                 log.exception("[%s] job failed", req.run_id[:6])
@@ -212,54 +242,17 @@ class JobRunner:
             r.elapsed_seconds = round(job.clock.now(), 3)
             log.info("[%s] %s | %d/%s outputs | all=%ss | peak=%s MB", req.run_id[:6], r.status,
                      r.completed, r.requested or "?", r.all_outputs_seconds, r.peak_memory_mb)
-
-
-def _request_settings(req: JobRequest) -> dict:
-    if req.task == "t2i":
-        return {"width": req.width, "height": req.height, "steps": req.steps,
-                "guidance": req.guidance, "batch": req.batch, "seed": req.seed}
-    if req.task == "i23d":
-        return {k: v for k, v in {"resolution": req.resolution, "texture_size": req.texture_size,
-                                  "seed": req.seed}.items() if v is not None}
-    if req.task == "llm":
-        return {"streams": req.streams, "max_tokens": req.max_tokens, "temperature": req.temperature,
-                "seed": req.seed, "repeat_until_budget": req.repeat_until_budget}
-    if req.task == "layout":
-        return {"room_type": req.room_type, "max_objects": req.max_objects, "streams": req.streams,
-                "max_tokens": req.max_tokens, "temperature": req.temperature, "seed": req.seed,
-                "repeat_until_budget": req.repeat_until_budget,
-                **({"repairs": req.repairs, "review_rounds": req.review_rounds}
-                   if req.repairs or req.review_rounds else {}),
-                **({"layout_prompt": req.layout_prompt} if req.layout_prompt else {})}
-    return {"length_s": req.length_s, "seed": req.seed, "repeat_until_budget": req.repeat_until_budget}
-
-
-def save_upload(b64: str, results_dir: Path, run_id: str) -> Path:
-    """An uploaded input image (already checked and normalised by the conductor) -> a PNG file."""
-    import base64
-    import binascii
-    import re
-    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", run_id):     # it becomes a file name
-        raise ValueError("run_id may hold only letters, digits, - and _")
-    try:
-        data = base64.b64decode(b64, validate=True)
-    except (binascii.Error, ValueError) as e:
-        raise ValueError("image_b64 is not valid base64") from e
-    if len(data) > 20 * 2**20 or not data.startswith(b"\x89PNG\r\n\x1a\n"):
-        raise ValueError("image_b64 must be a PNG of at most 20 MB")
-    d = results_dir / "inputs"
-    d.mkdir(parents=True, exist_ok=True)
-    path = d / f"{run_id}.png"
-    path.write_bytes(data)
-    return path
+        # Only now is the exception's traceback gone (it held the model through the backend's frames),
+        # so only now can the memory be freed: drop the model after an out-of-memory, else just free.
+        if r.status == "out_of_memory":
+            self.models.unload(req.model)
+        elif failed:
+            free_memory()
 
 
 def memory_report() -> dict:
     """This worker's resident memory (itself plus children such as llama-server) and what the
     machine has free. VRAM only when this process already uses CUDA (asking would create a context)."""
-    import sys
-
-    import psutil
     out: dict = {}
     try:
         p = psutil.Process()
@@ -273,7 +266,6 @@ def memory_report() -> dict:
         out["ram_free_mb"] = round(psutil.virtual_memory().available / 2**20)
     except psutil.Error:
         pass
-    torch = sys.modules.get("torch")
     try:
         if torch is not None and torch.cuda.is_available() and torch.cuda.is_initialized():
             out["vram_free_mb"] = round(torch.cuda.mem_get_info()[0] / 2**20)
@@ -284,27 +276,26 @@ def memory_report() -> dict:
 
 def _short(e: BaseException) -> str:
     s = f"{type(e).__name__}: {e}"
-    return s if len(s) < 400 else s[:400] + "…"
+    return s if len(s) < D.error_text_chars else s[:D.error_text_chars] + "…"
 
 
 def env_report(cfg: dict) -> dict:
     dists = sorted({f"{d.metadata['Name'].lower()}=={d.version}" for d in md.distributions()
                     if d.metadata["Name"]})
     # Torch / CUDA wheels legitimately differ between the CPU box and the GPU machines.
-    comparable = [d for d in dists if not d.split("==")[0].startswith(("torch", "nvidia-", "triton"))]
+    comparable = [d for d in dists if not d.split("==")[0].startswith(tuple(D.env_hash_exclude))]
     info: dict = {"machine": cfg["machine"], "python": platform.python_version(),
                   "platform": platform.platform(), "packages": comparable,
                   "env_hash": hashlib.sha1("\n".join(comparable).encode()).hexdigest()[:12]}
-    try:
-        import torch
+    if torch is None:
+        info["torch"] = None
+    else:
         info["torch"] = torch.__version__
         info["cuda"] = torch.version.cuda
         info["gpus"] = ([torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())]
                         if torch.cuda.is_available() else [])
         info["threads"] = torch.get_num_threads()
-    except ImportError:
-        info["torch"] = None
-    for pkg in ("diffusers", "transformers", "accelerate", "bitsandbytes"):
+    for pkg in D.env_report_packages:
         try:
             info[pkg] = md.version(pkg)
         except md.PackageNotFoundError:
@@ -315,7 +306,7 @@ def env_report(cfg: dict) -> dict:
 def create_app(cfg: dict) -> FastAPI:
     models = ModelManager(cfg)
     runner = JobRunner(cfg, models)
-    token = os.environ.get("ARC_DEMO_TOKEN")
+    token = os.environ.get(cfg.get("token_env") or DEFAULTS.conductor.token_env)   # the conductor's variable
     env_cache: dict = {}
 
     def auth(x_demo_token: Optional[str] = Header(default=None)) -> None:
@@ -325,10 +316,8 @@ def create_app(cfg: dict) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         env_cache.update(env_report(cfg))   # slow (scans installed packages): do it once, here
-        torch_tasks = [t for t in cfg["tasks"] if t not in ("llm", "layout")]   # llama-server sets its own threads
+        torch_tasks = [t for t in cfg["tasks"] if t not in tasks.OWN_THREADS]   # llama-server sets its own threads
         if any(d == "cpu" for t in torch_tasks for d in cfg["devices"].get(t, [])) and not cfg.get("mock"):
-            import psutil
-            import torch
             torch.set_num_threads(int(cfg.get("cpu_threads") or psutil.cpu_count(logical=False) or 1))
             log.info("CPU threads: %d", torch.get_num_threads())
         keys = [k for t in cfg["tasks"] for k in (cfg.get("preload") or {}).get(t, [])]
@@ -356,9 +345,8 @@ def create_app(cfg: dict) -> FastAPI:
     disk = {"at": 0.0, "keys": []}
 
     def available() -> list[str]:
-        """Models of this worker's tasks whose weights are on disk (re-checked every 15 s)."""
-        if time.time() - disk["at"] > 15:
-            from ..weights import on_disk
+        """Models of this worker's tasks whose weights are on disk (re-checked every worker.disk_recheck_seconds)."""
+        if time.time() - disk["at"] > D.disk_recheck_seconds:
             disk["keys"] = [k for k, spec in cfg["models"].items() if spec.get("task") in cfg["tasks"]
                             and (cfg.get("mock") or on_disk(spec, k))]
             disk["at"] = time.time()
@@ -377,10 +365,15 @@ def create_app(cfg: dict) -> FastAPI:
             try:
                 models.ensure(req.model)
                 models.last_error = None
+                return
             except BaseException as e:  # noqa: BLE001 — already logged by ModelManager.get
                 models.last_error = f"load {req.model}: {_short(e)}"
-                if is_oom(e):
-                    models.unload(req.model)
+                oom = is_oom(e)
+            # Out of the except block: its traceback held the half-built model until now.
+            if oom:
+                models.unload(req.model)
+            else:
+                free_memory()
         threading.Thread(target=do, daemon=True).start()
         return {"model": req.model, "status": "loading"}
 

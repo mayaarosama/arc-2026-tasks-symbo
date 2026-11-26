@@ -1,0 +1,16 @@
+{
+ "_about": "Task 8 self-correction (segment seg8b): what the model is told about its own mistakes. $-placeholders are filled by arcdemo/layout_prompt.py (string.Template).",
+ "repair": "Line $n, \"$line\", has a problem: $problems. Write line $n again: the same $object, placed where it fits. Write only that one line.",
+ "review_intro": "Check the room you wrote. Here it is, numbered, with the problems found:",
+ "review_row_problem": "  <- problem: $problems",
+ "review_row_ok": "  ok",
+ "review_missing": "The room has no $missing.",
+ "review_instructions": [
+  "Fix the problems with edits, one per line:",
+  "move <n> wall=<wall name> at=<at>      (a wall piece, to a wall)",
+  "move <n> x=<x> y=<y> facing=<north|east|south|west>      (a free piece)",
+  "remove <n>      (only if it fits nowhere)",
+  "Then write done. Change only what fixes a problem."
+ ],
+ "undone": "Your edit \"$edit\" was undone: it made the room worse."
+}

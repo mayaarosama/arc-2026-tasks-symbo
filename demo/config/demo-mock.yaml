@@ -1,5 +1,5 @@
 # Laptop dry-run: same run of show and settings as demo.yaml, but the three "machines" are
-# mock workers on localhost (see scripts/run_mock_demo.ps1). No GPU or model weights needed.
+# mock workers on localhost (python -m scripts.common.run_mock_demo). No GPU or model weights needed.
 extends: demo.yaml
 session_dir: session-mock
 replay_dir: replay-mock

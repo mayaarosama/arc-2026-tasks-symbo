@@ -1,4 +1,4 @@
-"""scripts/fit_upload.py: its output meets the upload requirements (arcdemo/imageprep.py)."""
+"""scripts/i23d/fit_upload.py: its output meets the upload requirements (arcdemo/imageprep.py)."""
 import subprocess
 import sys
 from pathlib import Path
@@ -8,13 +8,13 @@ from PIL import Image
 from arcdemo import imageprep as P
 from tests.test_imageprep import object_on
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "fit_upload.py"
+DEMO = Path(__file__).resolve().parents[1]
 
 
 def fit(tmp_path, img: Image.Image, name: str, **save) -> Image.Image:
     src, out = tmp_path / name, tmp_path / "out.png"
     img.save(src, **save)
-    subprocess.run([sys.executable, str(SCRIPT), str(src), "-o", str(out)], check=True)
+    subprocess.run([sys.executable, "-m", "scripts.i23d.fit_upload", str(src), "-o", str(out)], cwd=DEMO, check=True)
     return Image.open(out)
 
 

@@ -1,14 +1,27 @@
 // Operator console. Every button maps to one conductor endpoint; errors are shown inline.
 // Labels are written for the operator on the night, not for the developer: no segment ids,
 // protocol names or input ids on buttons.
+//
+// Shared console code first; then one section per task in show order (Task 1 t2i, 2 i23d, 3 music,
+// 4 llm, 8 layout), each filling OPERATOR_VIEW[task] where the page differs:
+//   describe(x)            an example's text in the dropdown
+//   uploads                show the picture upload box
+//   showsPrompt            show the exact text the model is sent (GET /api/prompt)
+//   preview(box, item, c)  the "Input" line of "what will run" (true = handled)
+//   batchTotal(c)          outputs to count when the worker has not said yet
 "use strict";
+
+// ---------------------------------------------------------------- shared -----------------
+const OPERATOR_VIEW = {};
+const opView = (task) => OPERATOR_VIEW[task] || {};
 
 let cfg = null;
 let segId = null;
 let spares = [];          // pre-vetted spare prompts (t2i), typed as a custom prompt
 let planSeq = 0;          // ignore plan answers that arrive after a newer selection
 
-const VIEW_NAMES = [["title", "Title screen"], ["round", "Live results"], ["summary", "Summary chart"], ["blank", "Blank screen"]];
+// The projector's views (their list comes from config/defaults.yaml stage.views, via /api/config).
+const VIEW_LABEL = { title: "Title screen", round: "Live results", summary: "Summary chart", blank: "Blank screen" };
 
 async function api(path, body) {
   const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" },
@@ -42,10 +55,7 @@ function fillExamples(s) {
   const sel = document.getElementById("example");
   sel.replaceChildren();
   const all = (cfg.inputs[s.task] || []).filter((x) => x.id !== "live" && !x._todo);
-  const describe = (x) => {
-    if (s.task === "i23d") return `${x.label}${x.tier ? " (" + x.tier + ")" : ""}`;
-    return x.prompt ? `${x.label} — “${x.prompt}”` : x.label || x.id;
-  };
+  const describe = opView(s.task).describe || ((x) => (x.prompt ? `${x.label} — “${x.prompt}”` : x.label || x.id));
   const group = (label, items) => {
     if (!items.length) return;
     const g = el("optgroup");
@@ -63,54 +73,13 @@ function fillExamples(s) {
   group("Planned for this part", planned.map((x) => ["input:" + x.id, describe(x)]));
   group("Other examples (rehearsed)", others.map((x) => ["input:" + x.id, describe(x)]));
   group("Uploaded pictures (live only)", mine.map((x) => ["input:" + x.id, x.label]));
-  document.getElementById("upload-box").hidden = s.task !== "i23d";
+  document.getElementById("upload-box").hidden = !opView(s.task).uploads;
   const canType = (cfg.inputs[s.task] || []).some((x) => x.id === "live");
   if (canType) {
     group("Spare prompts", spares.map((p, i) => ["spare:" + i, p]));
     group("Audience prompt", [["custom", "✎ Type a new prompt…"]]);
   }
   sel.value = s.inputs.includes("live") ? "custom" : sel.options[0] ? sel.options[0].value : "";
-}
-
-// ---------------------------------------------------------------- image-to-3D upload ----
-// The conductor checks the picture, cuts the object out and normalises it once, so every machine
-// gets the same input; the operator sees the cut-out before using it.
-async function loadUploadSpec() {
-  try {
-    const r = await (await fetch("/api/i23d/spec")).json();
-    const dl = document.getElementById("upload-spec");
-    dl.replaceChildren(...r.spec.flatMap((x) => [el("dt", null, x.what), el("dd", null, x.rule)]));
-    if (!r.cutout_installed) say("upload-msg", "The cut-out model is not installed here: only PNGs with a "
-      + "transparent background will work (python scripts/download_weights.py --cutout).", "down");
-  } catch (e) { /* the box still works; the spec is advice */ }
-}
-
-function onUpload(ev) {
-  const file = ev.target.files && ev.target.files[0];
-  if (!file) return;
-  const box = document.getElementById("upload-preview");
-  box.replaceChildren();
-  say("upload-msg", `Checking ${file.name} and cutting the object out…`);
-  const reader = new FileReader();
-  reader.onload = async () => {
-    try {
-      const item = await api("/api/i23d/upload", { name: file.name, data_url: reader.result });
-      const list = cfg.inputs.i23d = (cfg.inputs.i23d || []).filter((x) => x.id !== item.id);
-      list.push(item);
-      const show = (src, cap) => { const f = el("figure"); const im = el("img"); im.src = src;
-        f.append(im, el("figcaption", null, cap)); return f; };
-      box.append(show(reader.result, "your picture"), show(item.input_url, "what every machine gets"));
-      say("upload-msg", item.warnings.length ? "Ready, with a warning: " + item.warnings.join(" ")
-        : "Ready: it is selected below. Check the cut-out before you start.", item.warnings.length ? "warn" : "up");
-      fillExamples(seg());
-      document.getElementById("example").value = "input:" + item.id;
-      onChoice();
-    } catch (e) {
-      say("upload-msg", e.message, "down");
-    }
-    ev.target.value = "";             // the same file can be picked again after a fix
-  };
-  reader.readAsDataURL(file);
 }
 
 function choice() {
@@ -147,10 +116,10 @@ async function loadPlan() {
   renderPlan(s, c, plan);
 }
 
-// Task 8 and Task 4: the exact text the model is sent, so the operator can show or explain it.
+// The exact text the model is sent (Task 4, Task 8), so the operator can show or explain it.
 async function showPrompt(s, c) {
   const dt = document.getElementById("p-prompt-dt"), dd = document.getElementById("p-prompt-dd");
-  const show = (s.task === "layout" || s.task === "llm") && c.inputId && c.inputId !== "live";
+  const show = !!opView(s.task).showsPrompt && c.inputId && c.inputId !== "live";
   dt.hidden = dd.hidden = !show;
   if (!show) return;
   const pre = document.getElementById("p-prompt");
@@ -163,15 +132,6 @@ async function showPrompt(s, c) {
   }
 }
 
-// The plan thumbnail needs the wall names, which the conductor derives (same as the stage header).
-async function loadLayoutView(s, c, box) {
-  try {
-    const v = await (await fetch(`/api/layout_view?input_id=${encodeURIComponent(c.inputId)}`)).json();
-    box.appendChild(planSvg(v));
-    box.appendChild(el("div", "muted", v.ask));
-  } catch (e) { /* the label alone is enough */ }
-}
-
 function renderPlan(s, c, plan) {
   const budget = plan.budget_seconds;
   document.getElementById("p-task").textContent = TASK_NAME[s.task] || s.task;
@@ -180,18 +140,11 @@ function renderPlan(s, c, plan) {
   const inp = document.getElementById("p-input");
   inp.replaceChildren();
   const item = (cfg.inputs[s.task] || []).find((x) => x.id === c.inputId) || {};
+  const preview = opView(s.task).preview;
   if (c.inputId === "live") {
     inp.textContent = "The prompt typed below (live — no recording exists for it)";
-  } else if (s.task === "i23d" && (item.input || item.input_url)) {
-    inp.append(document.createTextNode(item.tier === "upload" ? `Your picture: ${item.label} (live only: no recording)`
-      : `Photo of a ${item.label.toLowerCase()}`));
-    const img = el("img", "input-img");
-    img.src = item.input_url || "/media-input/" + item.input;
-    img.onerror = () => img.remove();
-    inp.appendChild(img);
-  } else if (s.task === "layout" && item.floor_plan) {
-    inp.append(document.createTextNode(item.label));
-    loadLayoutView(s, c, inp);
+  } else if (preview && preview(inp, item, c)) {
+    // drawn by the task (a picture, a floor plan)
   } else {
     inp.textContent = item.prompt ? `“${item.prompt}”` : item.label || "—";
   }
@@ -369,22 +322,108 @@ function renderCells(s) {
   }
   for (const line of box.children) {
     const c = r.cells[line.dataset.mid];
-    const total = c.requested || (r.task === "t2i" ? c.settings.batch : null);
+    const total = c.requested || (opView(r.task).batchTotal ? opView(r.task).batchTotal(c) : null);
     const count = total ? ` · ${c.completed} of ${total} done` : "";
     const [state, note] = line.querySelectorAll(".what");
     state.textContent = `${cellWords(r, c)} · ${fmtClock(Demo.cellClock(r, c))}${count}`;
     note.textContent = c.note || "";
-    const busy = c.mode !== "REPLAY" && !["ok", "budget_exceeded", "out_of_memory", "cancelled", "error", "unavailable"].includes(c.status);
+    const busy = c.mode !== "REPLAY" && ![...cfg.ui.terminal, "unavailable"].includes(c.status);
     line.querySelector(".stop").disabled = !running || !busy;
     line.querySelector(".rec").disabled = c.mode === "REPLAY";
   }
 }
 
+// ---------------------------------------------------------------- Task 1: text to image ----
+OPERATOR_VIEW.t2i = {
+  batchTotal: (c) => c.settings.batch,
+};
+
+// ---------------------------------------------------------------- Task 2: image to 3D ------
+OPERATOR_VIEW.i23d = {
+  describe: (x) => `${x.label}${x.tier ? " (" + x.tier + ")" : ""}`,
+  uploads: true,
+  preview(box, item) {
+    if (!(item.input || item.input_url)) return false;
+    box.append(document.createTextNode(item.tier === "upload" ? `Your picture: ${item.label} (live only: no recording)`
+      : `Photo of a ${item.label.toLowerCase()}`));
+    const img = el("img", "input-img");
+    img.src = item.input_url || "/media-input/" + item.input;
+    img.onerror = () => img.remove();
+    box.appendChild(img);
+    return true;
+  },
+};
+
+// The upload box: an operator's own picture, checked and cut out by the conductor.
+// The conductor checks the picture, cuts the object out and normalises it once, so every machine
+// gets the same input; the operator sees the cut-out before using it.
+async function loadUploadSpec() {
+  try {
+    const r = await (await fetch("/api/i23d/spec")).json();
+    const dl = document.getElementById("upload-spec");
+    dl.replaceChildren(...r.spec.flatMap((x) => [el("dt", null, x.what), el("dd", null, x.rule)]));
+    if (!r.cutout_installed) say("upload-msg", "The cut-out model is not installed here: only PNGs with a "
+      + "transparent background will work (python -m scripts.common.download_weights --cutout).", "down");
+  } catch (e) { /* the box still works; the spec is advice */ }
+}
+
+function onUpload(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  const box = document.getElementById("upload-preview");
+  box.replaceChildren();
+  say("upload-msg", `Checking ${file.name} and cutting the object out…`);
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const item = await api("/api/i23d/upload", { name: file.name, data_url: reader.result });
+      const list = cfg.inputs.i23d = (cfg.inputs.i23d || []).filter((x) => x.id !== item.id);
+      list.push(item);
+      const show = (src, cap) => { const f = el("figure"); const im = el("img"); im.src = src;
+        f.append(im, el("figcaption", null, cap)); return f; };
+      box.append(show(reader.result, "your picture"), show(item.input_url, "what every machine gets"));
+      say("upload-msg", item.warnings.length ? "Ready, with a warning: " + item.warnings.join(" ")
+        : "Ready: it is selected below. Check the cut-out before you start.", item.warnings.length ? "warn" : "up");
+      fillExamples(seg());
+      document.getElementById("example").value = "input:" + item.id;
+      onChoice();
+    } catch (e) {
+      say("upload-msg", e.message, "down");
+    }
+    ev.target.value = "";             // the same file can be picked again after a fix
+  };
+  reader.readAsDataURL(file);
+}
+
+// ---------------------------------------------------------------- Task 3: music ------------
+OPERATOR_VIEW.music = {};
+
+// ---------------------------------------------------------------- Task 4: language model ---
+OPERATOR_VIEW.llm = { showsPrompt: true };
+
+// ---------------------------------------------------------------- Task 8: scene construction
+OPERATOR_VIEW.layout = {
+  showsPrompt: true,
+  preview(box, item, c) {
+    if (!item.floor_plan) return false;
+    box.append(document.createTextNode(item.label));
+    loadLayoutView(c, box);
+    return true;
+  },
+};
+
+// The plan thumbnail needs the wall names, which the conductor derives (same as the stage header).
+async function loadLayoutView(c, box) {
+  try {
+    const v = await (await fetch(`/api/layout_view?input_id=${encodeURIComponent(c.inputId)}`)).json();
+    box.appendChild(planSvg(v));
+    box.appendChild(el("div", "muted", v.ask));
+  } catch (e) { /* the label alone is enough */ }
+}
+
 // ---------------------------------------------------------------- wiring ---------------
-Promise.all([
-  fetch("/api/config").then((r) => r.json()),
-  fetch("/media-input/data/t2i/live_fallback_prompts.json").then((r) => (r.ok ? r.json() : { prompts: [] })).catch(() => ({ prompts: [] })),
-]).then(([c, fb]) => {
+fetch("/api/config").then((r) => r.json()).then(async (c) => {
+  const fb = await fetch(c.ui.spare_prompts).then((r) => (r.ok ? r.json() : { prompts: [] })).catch(() => ({ prompts: [] }));
   cfg = c;
   spares = fb.prompts || [];
   const segs = document.getElementById("segments");
@@ -405,8 +444,8 @@ Promise.all([
     force.appendChild(lab);
   }
   const views = document.getElementById("views");
-  for (const [v, name] of VIEW_NAMES) {
-    const b = el("button", null, name);
+  for (const v of c.ui.views) {
+    const b = el("button", null, VIEW_LABEL[v] || v);
     b.onclick = () => api("/api/view", { view: v });
     views.appendChild(b);
   }
@@ -419,7 +458,7 @@ Promise.all([
     onChoice();
   }
   Demo.onState((s) => { renderHealth(s); renderCells(s); });
-  Demo.poll(500);
+  Demo.poll(c.ui.operator_poll_ms);
 });
 
 document.getElementById("example").onchange = onChoice;

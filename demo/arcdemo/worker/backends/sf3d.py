@@ -21,7 +21,13 @@ from pathlib import Path
 
 from PIL import Image
 
-from ...imageprep import resize_foreground   # shared with the conductor's upload step
+try:                     # the i23d venv only: the worker imports this module when an i23d model loads
+    import torch
+except ImportError:
+    torch = None
+
+from ...defaults import DEFAULTS
+from ...imageprep import resize_foreground  # shared with the conductor's upload step
 from ...schemas import JobRequest
 from ..metrics import cuda_sync
 from .base import Backend, JobContext
@@ -34,6 +40,8 @@ class StableFast3D(Backend):
         dev = self.devices[0]
         if dev == "cpu":
             os.environ["SF3D_USE_CPU"] = "1"
+        # Deferred imports (the one exception to imports-at-the-top here): sf3d may not be importable
+        # until its third_party clone is put on sys.path below.
         try:
             import sf3d  # noqa: F401 — on PYTHONPATH already (setup_gpu_machine.sh sets it)
         except ModuleNotFoundError:   # a worker started by hand: use the repo's own clone
@@ -43,21 +51,23 @@ class StableFast3D(Backend):
             sys.path.insert(0, str(clone))
         from sf3d.system import SF3D
 
-        model = SF3D.from_pretrained(self.repo, config_name="config.yaml",
-                                     weight_name="model.safetensors")
+        # Built in a helper, never held in a local here: a library imported above keeps this frame
+        # alive (it captures the stack at import), and a local would keep the weights after unload.
+        self.model = self._build(SF3D, dev)
+
+    def _build(self, sf3d_cls, dev: str):
+        model = sf3d_cls.from_pretrained(self.repo, config_name="config.yaml", weight_name="model.safetensors")
         model.to(dev)
         model.eval()
-        self.model = model
+        return model
 
     def describe(self, req: JobRequest) -> dict:
         dev = self.devices[0]
-        return {"texture_size": req.texture_size or 1024,
+        return {"texture_size": req.texture_size or DEFAULTS.i23d.sf3d.texture_size,
                 "remesh": "none",
                 "precision": "bf16 autocast" if dev.startswith("cuda") else "fp32"}
 
     def generate(self, req: JobRequest, ctx: JobContext) -> None:
-        import torch
-
         dev = self.devices[0]
         img = resize_foreground(Image.open(req.image_path).convert("RGBA"))
         s = self.describe(req)

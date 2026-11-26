@@ -13,7 +13,9 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 1            # demo/
 DEMO="$PWD"
-SECRETS="${SECRETS:-$DEMO/./config.txt}"
+SECRETS="${SECRETS:-$DEMO/config.txt}"
+# shellcheck source=../../config/versions.env
+. "$DEMO/config/versions.env"        # pinned versions and ports (one file for every machine script)
 CPU=1 STOP=0
 for a in "$@"; do
     case "$a" in
@@ -25,9 +27,13 @@ done
 
 TASKS="t2i i23d music llm layout"
 declare -A VENV=([t2i]=.venv-t2i [i23d]=.venv-i23d [music]=.venv-music [llm]=.venv-llm [layout]=.venv-llm)
-declare -A GPU_PORT=([t2i]=8101 [i23d]=8102 [music]=8103 [llm]=8104 [layout]=8105)
-declare -A CPU_PORT=([t2i]=8201 [i23d]=8202 [music]=8203 [llm]=8204 [layout]=8205)
-CU=https://download.pytorch.org/whl/cu128 TORCH=2.7.1
+ports_of() {   # "t2i:8101,i23d:8102,..." -> declare -A NAME=([t2i]=8101 ...)
+    local -n _out=$1; local kv
+    for kv in ${2//,/ }; do _out[${kv%%:*}]=${kv##*:}; done
+}
+declare -A GPU_PORT=(); ports_of GPU_PORT "$WORKER_PORTS"
+declare -A CPU_PORT=(); ports_of CPU_PORT "$CPU_WORKER_PORTS"
+CU=$TORCH_INDEX_CUDA TORCH=$TORCH_VERSION
 
 # ---- secrets and offline mode -------------------------------------------------------------
 [ -f "$SECRETS" ] || { echo "secrets file not found: $SECRETS"; exit 1; }
@@ -102,7 +108,7 @@ if [ ! -x .venv/bin/python ]; then
     "${PY:-python3.11}" -m venv .venv && .venv/bin/pip install -r requirements/conductor.txt || exit 1
 fi
 if [ ! -f weights/u2net/u2net.onnx ]; then   # uploaded pictures (image-to-3D) need it; the rest of the show does not
-    .venv/bin/python scripts/download_weights.py --cutout         || echo "WARNING: no cut-out model: uploads work only as PNGs with a transparent background"
+    .venv/bin/python -m scripts.common.download_weights --cutout         || echo "WARNING: no cut-out model: uploads work only as PNGs with a transparent background"
 fi
 CFG=config/demo-workstation.yaml
 if [ $CPU = 0 ]; then   # GPU only: drop the CPU machine so the page does not show it as down
@@ -117,12 +123,12 @@ with open(sys.argv[1], "a", encoding="utf-8") as f:
     yaml.safe_dump({"machines": gpu}, f, sort_keys=False, allow_unicode=True)
 EOF
 fi
-nohup .venv/bin/python -m arcdemo.conductor --config "$CFG" --host 0.0.0.0 --port 8000 \
+nohup .venv/bin/python -m arcdemo.conductor --config "$CFG" --host 0.0.0.0 --port $CONDUCTOR_PORT \
     > results/stdout-conductor.log 2>&1 &
 echo $! > results/conductor.pid
-for _ in $(seq 30); do curl -sf -m 3 -o /dev/null http://127.0.0.1:8000/operator && break; sleep 1; done
-if curl -sf -m 3 -o /dev/null http://127.0.0.1:8000/operator; then
-    echo "conductor ($CFG): http://localhost:8000/operator   stage: http://localhost:8000/stage"
+for _ in $(seq 30); do curl -sf -m 3 -o /dev/null http://127.0.0.1:$CONDUCTOR_PORT/operator && break; sleep 1; done
+if curl -sf -m 3 -o /dev/null http://127.0.0.1:$CONDUCTOR_PORT/operator; then
+    echo "conductor ($CFG): http://localhost:$CONDUCTOR_PORT/operator   stage: http://localhost:$CONDUCTOR_PORT/stage"
 else
     echo "conductor did not start; last lines of results/stdout-conductor.log:"; tail -n 15 results/stdout-conductor.log; exit 1
 fi

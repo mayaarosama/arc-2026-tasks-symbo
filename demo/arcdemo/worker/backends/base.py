@@ -1,6 +1,7 @@
 """Backend interface. A backend wraps one model variant (one key in config/models.yaml)."""
 from __future__ import annotations
 
+import ctypes
 import gc
 import importlib
 import logging
@@ -8,6 +9,11 @@ import sys
 import threading
 from pathlib import Path
 from typing import Any, Callable, Optional
+
+try:                     # optional: the llm venv has no torch (llama-server does its GPU work)
+    import torch
+except ImportError:
+    torch = None
 
 from ...schemas import JobRequest, JobResult
 from ..metrics import Clock, MemoryMeter, cuda_sync
@@ -115,7 +121,6 @@ def free_memory() -> None:
     RSS would not drop after an unload. Windows returns large frees at once: nothing to do."""
     gc.collect()
     try:
-        torch = sys.modules.get("torch")     # never import torch just to free memory (llm env has none)
         if torch is not None and torch.cuda.is_available() and torch.cuda.is_initialized():
             torch.cuda.empty_cache()
             torch.cuda.ipc_collect()
@@ -123,7 +128,6 @@ def free_memory() -> None:
         pass
     if sys.platform.startswith("linux"):
         try:
-            import ctypes
             ctypes.CDLL("libc.so.6").malloc_trim(0)
         except (OSError, AttributeError):
             pass
@@ -132,18 +136,13 @@ def free_memory() -> None:
 def is_oom(exc: BaseException) -> bool:
     if isinstance(exc, MemoryError):
         return True
-    try:
-        import torch
-        if isinstance(exc, torch.cuda.OutOfMemoryError):
-            return True
-    except ImportError:
-        pass
+    if torch is not None and isinstance(exc, torch.cuda.OutOfMemoryError):
+        return True
     msg = str(exc).lower()
     return "out of memory" in msg or "cannot allocate memory" in msg
 
 
 def resolve_dtype(spec: dict, cfg: dict, device: str):
-    import torch
     d = spec.get("dtype", "auto")
     if d == "auto":
         if device.startswith("cuda"):
@@ -153,17 +152,23 @@ def resolve_dtype(spec: dict, cfg: dict, device: str):
 
 
 _BACKENDS: dict[str, str] = {
+    # Task 1 — text to image
     "diffusers_t2i": "arcdemo.worker.backends.diffusers_t2i:DiffusersT2I",
+    # Task 2 — image to 3D
     "trellis2": "arcdemo.worker.backends.trellis:Trellis2",
     "trellis1": "arcdemo.worker.backends.trellis:Trellis1",
     "sf3d": "arcdemo.worker.backends.sf3d:StableFast3D",
+    # Task 3 — music
     "stable_audio3": "arcdemo.worker.backends.stable_audio3:StableAudio3",
-    "music_stub": "arcdemo.worker.backends.music_stub:MusicStub",
+    # Task 4 — language model race
     "llama_server": "arcdemo.worker.backends.llm:LlamaServer",
-    "llm_mock": "arcdemo.worker.backends.llm:LlmMock",
+    # Task 8 — scene construction
     "llama_layout": "arcdemo.worker.backends.layout:LayoutServer",
+    # mock workers (worker config mock: true; arcdemo/worker/tasks.py MOCK_BACKEND picks one per task)
+    "mock": "arcdemo.worker.backends.mock:MockBackend",           # t2i and i23d
+    "music_stub": "arcdemo.worker.backends.music_stub:MusicStub",
+    "llm_mock": "arcdemo.worker.backends.llm:LlmMock",
     "layout_mock": "arcdemo.worker.backends.layout:LayoutMock",
-    "mock": "arcdemo.worker.backends.mock:MockBackend",   # t2i/i23d models when mock: true (music_stub, llm_mock)
 }
 
 

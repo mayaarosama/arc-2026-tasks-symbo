@@ -13,10 +13,10 @@ Tokens are counted as they arrive and reconciled with the server's own usage cou
 One stream of a small model is memory-bandwidth bound, so the DGX and the workstation nearly tie on
 it; many concurrent streams are where the DGX's advantage is real.
 
-Worker config keys: llama_server (binary, default "llama-server" on PATH), llm_slots (parallel
-sequences the server holds; >= the largest `streams` this machine runs), llm_ctx (tokens per slot,
-default 2048), cpu_threads, llama_args (extra flags, list), llama_env (extra environment
-variables for the server process, e.g. Vulkan driver workarounds).
+Worker config keys: llama_server (binary), llm_slots (parallel sequences the server holds; >= the
+largest `streams` this machine runs), llm_ctx (tokens per slot), cpu_threads, llama_args (extra
+flags, list), llama_env (extra environment variables for the server process, e.g. Vulkan driver
+workarounds). Without them: config/defaults.yaml llm. The system prompt: data/prompts/llm_system.txt.
 """
 from __future__ import annotations
 
@@ -33,12 +33,21 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Iterator, Optional
 
+import httpx
+
+try:                     # the llm venv has it; .venv (tests, mock workers) does not
+    from huggingface_hub import snapshot_download
+except ImportError:
+    snapshot_download = None
+import psutil
+
+from ...defaults import DEFAULTS
+from ...prompts import llm_system
 from ...schemas import JobRequest
 from .base import Backend, JobContext
 
 log = logging.getLogger("arcdemo.worker")
-SYSTEM = ("You are a helpful assistant at a public technology demo. "
-          "Answer clearly, in plain English, without tables.")
+L = DEFAULTS.llm                        # server defaults and timeouts: config/defaults.yaml
 
 
 class LlmBackend(Backend):
@@ -203,9 +212,8 @@ class LlamaServer(LlmBackend):
         return box["resp"]
 
     def load(self) -> None:
-        import httpx
-        from huggingface_hub import snapshot_download
-
+        if snapshot_download is None:
+            raise ModuleNotFoundError("huggingface_hub is not installed in this venv (requirements/llm.txt)")
         pattern = self.spec["file"]
         root = Path(snapshot_download(self.repo, allow_patterns=[pattern]))
         files = sorted(p for p in root.rglob("*.gguf") if fnmatch(p.relative_to(root).as_posix(), pattern))
@@ -213,12 +221,12 @@ class LlamaServer(LlmBackend):
             raise FileNotFoundError(f"no file matching {pattern} in {self.repo}")
         gpus = [d.split(":")[1] if ":" in d else "0" for d in self.devices if d.startswith("cuda")]
         slots, per_slot = self._slots(), self._ctx_per_slot()
-        exe = self.cfg.get("llama_server", "llama-server")
+        exe = self.cfg.get("llama_server", L.server_binary)
         self.port = _free_port()
         args = [exe, "-m", str(files[0]),          # split GGUFs: the server finds parts 2..n itself
                 "--host", "127.0.0.1", "--port", str(self.port),
                 "--parallel", str(slots), "--ctx-size", str(slots * per_slot),
-                "--n-gpu-layers", "999" if gpus else "0", "--jinja"]
+                "--n-gpu-layers", str(L.gpu_layers) if gpus else "0", "--jinja"]
         if self.cfg.get("cpu_threads"):
             args += ["--threads", str(self.cfg["cpu_threads"])]
         args += [str(a) for a in self.cfg.get("llama_args") or []]
@@ -229,8 +237,9 @@ class LlamaServer(LlmBackend):
         log.info("starting %s", " ".join(args))
         self.proc = subprocess.Popen(args, stdout=self._logf, stderr=subprocess.STDOUT, env=env)
         self.http = httpx.Client(base_url=f"http://127.0.0.1:{self.port}", trust_env=False,
-                                 timeout=httpx.Timeout(120, connect=5))   # a stalled stream errors
-        end = time.time() + 900
+                                 timeout=httpx.Timeout(L.read_timeout_seconds,      # a stalled stream errors
+                                                       connect=L.connect_timeout_seconds))
+        end = time.time() + L.load_timeout_seconds
         while True:            # 503 while the weights load, 200 when ready
             if self.proc.poll() is not None:
                 tail = self.log_path.read_text(encoding="utf-8", errors="replace")[-1500:]
@@ -245,29 +254,30 @@ class LlamaServer(LlmBackend):
                 pass
             if time.time() > end:
                 self.unload()
-                raise TimeoutError("llama-server not ready after 900 s")
+                raise TimeoutError(f"llama-server not ready after {L.load_timeout_seconds:g} s")
             time.sleep(0.5)
         out = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=30)
         self.version = next((ln.strip() for ln in (out.stdout + out.stderr).splitlines() if "version" in ln), "?")
-        warm = JobRequest(task="llm", model=self.key, input_id="warmup", prompt="Hello", max_tokens=8)
+        warm = JobRequest(task="llm", model=self.key, input_id="warmup", prompt=L.warmup_prompt,
+                          max_tokens=L.warmup_tokens)
         for _ in self._stream(warm, 0):   # first request pays one-off CUDA / page-in costs
             pass
         self.model = self.proc
 
     def _ctx_per_slot(self) -> int:
-        return int(self.cfg.get("llm_ctx", 2048))
+        return int(self.cfg.get("llm_ctx", L.ctx_per_slot))
 
     def _slots(self) -> int:
         """Server slots: the worker's llm_slots, unless the model's models.yaml entry caps it with
         `slots` (a model that only fits the card with a small KV cache, e.g. Qwen3.8 27B on 16 GB)."""
-        return int(self.spec.get("slots") or self.cfg.get("llm_slots", 1))
+        return int(self.spec.get("slots") or self.cfg.get("llm_slots", L.slots))
 
     def unload(self) -> None:
         proc = getattr(self, "proc", None)
         if proc is not None and proc.poll() is None:
             proc.terminate()
             try:
-                proc.wait(15)
+                proc.wait(L.stop_timeout_seconds)
             except subprocess.TimeoutExpired:
                 proc.kill()
         for h in (getattr(self, "http", None), getattr(self, "_logf", None)):
@@ -283,7 +293,7 @@ class LlamaServer(LlmBackend):
         return _ServerMemory(self)
 
     def _stream(self, req: JobRequest, seed: int) -> Iterator[tuple[str, int]]:
-        messages = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": req.prompt or ""}]
+        messages = [{"role": "system", "content": llm_system()}, {"role": "user", "content": req.prompt or ""}]
         yield from self._chat(messages, req.max_tokens, req.temperature, seed)
 
     def _chat(self, messages: list[dict], max_tokens: int, temperature: float, seed: int,
@@ -343,7 +353,6 @@ class _ServerMemory:
             except (OSError, subprocess.SubprocessError):
                 pass
         else:
-            import psutil
             try:
                 self.peak_allocated_mb = psutil.Process(pid).memory_info().rss / (1024 * 1024)
             except psutil.Error:
@@ -370,7 +379,7 @@ class LlmMock(LlmBackend):
         time.sleep(0.3)
 
     def _stream(self, req: JobRequest, seed: int) -> Iterator[tuple[str, int]]:
-        delay = 0.025 * float(self.cfg.get("mock_speed", 1.0)) * (1 + req.streams / 32)
+        delay = DEFAULTS.mock.token_delay_seconds * float(self.cfg.get("mock_speed", 1.0)) * (1 + req.streams / 32)
         rng = random.Random(seed)
         for j in range(req.max_tokens):
             time.sleep(delay * rng.uniform(0.8, 1.2))

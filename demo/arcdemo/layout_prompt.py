@@ -10,7 +10,11 @@ import hashlib
 import json
 import re
 from pathlib import Path
+from string import Template
 from typing import Optional
+
+from . import prompts
+from .defaults import DEFAULTS
 
 ROOT = Path(__file__).resolve().parents[1]                  # demo/
 DEFAULT_CATALOG = "data/layout/furniture.json"              # demo.yaml / worker config key: layout_catalog
@@ -79,58 +83,21 @@ def load_catalog(path: Optional[str | Path] = None, check_models: bool = False) 
 
 
 FACING = {"north": 0, "east": 90, "south": 180, "west": 270}
-DOOR_CLEARANCE = 0.8        # metres kept free in front of the door
-OVERLAP_SHARE = 0.10        # overlap above this share of the smaller footprint is flagged
-WALL_TOLERANCE = 0.03       # a corner this far outside the outline still counts as inside
+# The room checks' thresholds: config/defaults.yaml layout.checks (door_clearance, overlap_share, wall_tolerance).
+DOOR_CLEARANCE = DEFAULTS.layout.checks.door_clearance
+OVERLAP_SHARE = DEFAULTS.layout.checks.overlap_share
+WALL_TOLERANCE = DEFAULTS.layout.checks.wall_tolerance
 
 PROMPT_VERSION = "v3.1"  # v1 raw coordinates; v2 + wall rules, sizes, free zones; v3 wall-anchored lines;
                          # v3.1 examples are room types not on stage (v3 bedroom example was copied verbatim)
 
-SYSTEM = (
-    "You are an interior designer furnishing an empty room, one object per line, the most important "
-    "object first.\n"
-    "Coordinates are in metres: the origin is the south-west corner, x grows east, y grows north. "
-    "Sizes are fixed and listed with each object as width x depth x height; the width is the object's front.\n"
-    "Wall pieces (marked [wall]) stand with their back against a wall, facing into the room. Write:\n"
-    "<object> wall=<wall name> at=<position of the object's centre along that wall>\n"
-    "On a north or south wall, at is an x value; on an east or west wall, at is a y value. Keep at least "
-    "half the object's width between at and each end of the wall.\n"
-    "Free pieces (marked [free]) stand anywhere on the floor. Write:\n"
-    "<object> x=<centre x> y=<centre y> facing=<north|east|south|west>\n"
-    "Rules: objects never overlap. Two pieces on the same wall need their at values apart by at least half "
-    "of each width added together; a free piece keeps clear of the wall pieces (a wall piece reaches its "
-    "depth into the room). Nothing goes in the door's keep-empty zone or in areas marked not floor. Put "
-    "each piece where it makes sense: nightstands beside the bed on the same wall, a chair facing the desk, "
-    "the coffee table in front of the sofa, the TV stand facing the sofa. Spread the furniture around the "
-    "room. Write nothing except the lines."
-)
+SYSTEM = prompts.text("layout_system.txt")      # data/prompts/layout_system.txt
 
-# Hand-written examples (our own, not from any dataset). Room types that are not on stage (a study,
-# a dining room) and plans unlike the stage rooms, so the model cannot copy a stage answer. Checked
+# The worked examples (data/prompts/layout_examples.json): our own rooms, not from any dataset, of room
+# types that are not on stage (a study, a dining room), so the model cannot copy a stage answer. Checked
 # by tests/test_layout.py: every line resolves, inside, no overlaps, door free.
-EXAMPLES = [
-    ({"room_type": "study", "floor_plan": [[0, 0], [4.4, 0], [4.4, 3.2], [0, 3.2]], "door": [4.4, 2.6],
-      "max_objects": 8},
-     "desk wall=south at=1.20\n"
-     "chair x=1.20 y=0.85 facing=south\n"
-     "bookshelf wall=west at=2.00\n"
-     "bookshelf wall=west at=2.80\n"
-     "armchair x=2.40 y=2.60 facing=west\n"
-     "floor_lamp x=2.40 y=1.90 facing=south\n"
-     "cabinet wall=east at=1.00\n"
-     "plant x=0.30 y=0.90 facing=south\n"),
-    ({"room_type": "dining_room", "floor_plan": [[0, 0], [3, 0], [3, 1.8], [5.2, 1.8], [5.2, 4.6], [0, 4.6]],
-      "door": [0, 1.0], "max_objects": 9},
-     "dining_table x=2.00 y=3.00 facing=north\n"
-     "dining_chair x=2.00 y=3.75 facing=south\n"
-     "dining_chair x=2.00 y=2.25 facing=north\n"
-     "cabinet wall=north at=4.00\n"
-     "dresser wall=east2 at=3.00\n"
-     "bookshelf wall=south1 at=1.80\n"
-     "side_table x=4.40 y=2.10 facing=north\n"
-     "floor_lamp x=4.80 y=4.20 facing=south\n"
-     "plant x=0.30 y=4.30 facing=south\n"),
-]
+EXAMPLES = [(e["room"], "".join(line + "\n" for line in e["reply"]))
+            for e in prompts.json_doc("layout_examples.json")["examples"]]
 
 load_catalog()     # the default document; the conductor and worker reload it from their config's layout_catalog
 
@@ -361,11 +328,12 @@ def check(o: dict, earlier: list[dict], spec: dict) -> list[str]:
 #   + REMOVE_COST per object taken out (less than a flag, so dropping a piece that fits nowhere is
 #     allowed, but more than nothing, so emptying the room is never the cheapest "fix")
 #   + MUST_HAVE_COST if the room's main piece is missing.
-FLAG_COST = 1.0
-REMOVE_COST = 0.5
-MUST_HAVE_COST = 2.0
-MUST_HAVE = {"bedroom": {"double_bed", "single_bed"}, "living_room": {"sofa"}, "library": {"bookshelf"},
-             "study": {"desk"}, "dining_room": {"dining_table"}}
+# The weights and the main pieces: config/defaults.yaml layout.costs and layout.must_have.
+FLAG_COST = DEFAULTS.layout.costs.flag
+REMOVE_COST = DEFAULTS.layout.costs.remove
+MUST_HAVE_COST = DEFAULTS.layout.costs.must_have
+MUST_HAVE = {room: set(classes) for room, classes in DEFAULTS.layout.must_have.items()}
+FIX = prompts.json_doc("layout_self_correction.json")     # what the model is told (data/prompts/)
 
 
 def problem_cost(o: dict, earlier: list[dict], spec: dict) -> float:
@@ -399,9 +367,8 @@ def continue_messages(spec: dict, kept: list[str]) -> list[dict]:
 
 def repair_messages(spec: dict, kept: list[str], bad_line: str, n: int, problems: list[str]) -> list[dict]:
     cls = bad_line.split()[0]
-    ask = (f"Line {n}, \"{bad_line.strip()}\", has a problem: {'; '.join(problems)}. "
-           f"Write line {n} again: the same {cls.replace('_', ' ')}, placed where it fits. "
-           "Write only that one line.")
+    ask = Template(FIX["repair"]).substitute(n=n, line=bad_line.strip(), problems="; ".join(problems),
+                                             object=cls.replace("_", " "))
     return messages(spec) + [{"role": "assistant", "content": "".join(kept) + bad_line.rstrip("\n") + "\n"},
                              {"role": "user", "content": ask}]
 
@@ -411,17 +378,14 @@ def review_messages(spec: dict, kept: list[str], active: list[dict], notes: list
     rows = []
     for k, o in enumerate(active):
         probs = [txt for _, _, txt in measure(o, active[:k], spec)]
-        rows.append(f"{o['i'] + 1} {line_of(o)}" + (f"  <- problem: {'; '.join(probs)}" if probs else "  ok"))
+        rows.append(f"{o['i'] + 1} {line_of(o)}" + (Template(FIX["review_row_problem"]).substitute(
+            problems="; ".join(probs)) if probs else FIX["review_row_ok"]))
     missing = [m for m in MUST_HAVE.get(spec["room_type"], set())]
-    ask = ["Check the room you wrote. Here it is, numbered, with the problems found:", *rows, ""]
+    ask = [FIX["review_intro"], *rows, ""]
     if missing and not any(o["cls"] in missing for o in active):
-        ask.append(f"The room has no {' or '.join(sorted(missing))}.")
+        ask.append(Template(FIX["review_missing"]).substitute(missing=" or ".join(sorted(missing))))
     ask += notes
-    ask += ["Fix the problems with edits, one per line:",
-            "move <n> wall=<wall name> at=<at>      (a wall piece, to a wall)",
-            "move <n> x=<x> y=<y> facing=<north|east|south|west>      (a free piece)",
-            "remove <n>      (only if it fits nowhere)",
-            "Then write done. Change only what fixes a problem."]
+    ask += FIX["review_instructions"]
     return messages(spec) + [{"role": "assistant", "content": "".join(kept)},
                              {"role": "user", "content": "\n".join(ask)}]
 
@@ -439,7 +403,7 @@ def repair_grammar(spec: dict, cls: str) -> str:
     return "\n".join([f'root ::= "{cls} x=" num " y=" num " facing=" dir "\\n"'] + _rules_num_dir())
 
 
-def edit_grammar(spec: dict, active: list[dict], max_edits: int = 6) -> str:
+def edit_grammar(spec: dict, active: list[dict], max_edits: int = DEFAULTS.layout.max_edits) -> str:
     """move / remove for the numbers in the room (wall pieces move along walls, free pieces on the
     floor), then done. Syntax only: which object and where are the model's choice."""
     names = list(walls(spec["floor_plan"]))
@@ -513,18 +477,19 @@ def summarise(objects: list[dict]) -> dict:
 #   - k-similar examples: the K rooms of the same type whose 64x64 floor masks differ least (mean
 #     squared difference), shown as user "Condition: ... Layout:" / assistant lines.
 # Changed: metres (their metre mode); our example rooms (data/layout/exemplars.json, built by
-# scripts/build_layout_exemplars.py) instead of 3D-FRONT, which needs a signed licence; K=4 (not 8)
+# scripts/layout/build_layout_exemplars.py) instead of 3D-FRONT, which needs a signed licence; K=4 (not 8)
 # so a prompt fits llama-server's 4,096-token slot; the stage's greedy decoding, not GPT-4 at 0.7.
 # Sizes the model writes are kept on the object (written_size); the checks and the stage use the
 # standard sizes, as for v3.1, so the comparison is about where things go. A grammar fixes the
 # line's syntax and the room's vocabulary only, as in v3.1.
-LAYOUTGPT_K = 4
-EXEMPLARS_PATH = "data/layout/exemplars.json"
+LAYOUTGPT_K = DEFAULTS.layout.layoutgpt_examples          # config/defaults.yaml layout
+EXEMPLARS_PATH = DEFAULTS.layout.exemplars
 CSS_LINE = re.compile(
     r"^\s*([a-z_]+)\s*\{length:\s*(\d+(?:\.\d+)?)m;\s*width:\s*(\d+(?:\.\d+)?)m;\s*height:\s*(\d+(?:\.\d+)?)m;"
     r"\s*orientation:\s*(-?\d+)\s*degrees;\s*left:\s*(-?\d+(?:\.\d+)?)m;\s*top:\s*(-?\d+(?:\.\d+)?)m;"
     r"\s*depth:\s*(-?\d+(?:\.\d+)?)m;\s*\}\s*$")
-ROOM_NAME = {"living_room": "living room", "dining_room": "dining room"}
+GPT = prompts.json_doc("layoutgpt.json")                  # LayoutGPT's prompt text (data/prompts/)
+ROOM_NAME = GPT["room_names"]
 _EXEMPLARS: Optional[list[dict]] = None
 
 
@@ -561,14 +526,13 @@ def css_grammar(spec: dict) -> str:
 def exemplars() -> list[dict]:
     global _EXEMPLARS
     if _EXEMPLARS is None:
-        import json
-        from pathlib import Path
-        path = Path(__file__).resolve().parents[1] / EXEMPLARS_PATH
+        path = ROOT / EXEMPLARS_PATH
         _EXEMPLARS = json.loads(path.read_text(encoding="utf-8"))
     return _EXEMPLARS
 
 
-def floor_mask(pts: list, n: int = 64, extent: float = 8.0) -> list[list[bool]]:
+def floor_mask(pts: list, n: int = DEFAULTS.layout.mask_cells,
+               extent: float = DEFAULTS.layout.mask_metres) -> list[list[bool]]:
     """The floor as an n x n mask over an extent x extent metre square from the outline's min corner."""
     x0, y0 = min(p[0] for p in pts), min(p[1] for p in pts)
     shifted = [[x - x0, y - y0] for x, y in pts]
@@ -589,8 +553,8 @@ def similar_rooms(spec: dict, k: int = LAYOUTGPT_K) -> list[dict]:
 
 def _condition(spec: dict) -> str:
     xs, ys = [p[0] for p in spec["floor_plan"]], [p[1] for p in spec["floor_plan"]]
-    return (f"Condition:\nRoom Type: {ROOM_NAME.get(spec['room_type'], spec['room_type'])}\n"
-            f"Room Size: max length {max(xs) - min(xs):.2f}m, max width {max(ys) - min(ys):.2f}m\nLayout:\n")
+    return Template(GPT["condition"]).substitute(room=ROOM_NAME.get(spec["room_type"], spec["room_type"]),
+                                                 length=f"{max(xs) - min(xs):.2f}", width=f"{max(ys) - min(ys):.2f}")
 
 
 def layoutgpt_messages(spec: dict, k: int = LAYOUTGPT_K) -> list[dict]:
@@ -603,14 +567,9 @@ def layoutgpt_messages(spec: dict, k: int = LAYOUTGPT_K) -> list[dict]:
                 c = line.split(" ", 1)[0]
                 freq[c] = freq.get(c, 0) + 1
     total = sum(freq.values()) or 1
-    system = ("You are a 3D indoor scene designer. \nInstruction: synthesize the 3D layout of an indoor scene. "
-              "The generated 3D layout should follow the CSS style, where each line starts with the furniture "
-              "category and is followed by the 3D size, orientation and absolute position. Formally, each line "
-              "should follow the template: \nFURNITURE {length: ?m; width: ?m; height: ?m; orientation: ? degrees; "
-              "left: ?m; top: ?m; depth: ?m;}\nAll values are in meters but the orientation angle is in degrees.\n"
-              f"Available furnitures: {', '.join(vocab)}\n"
-              "Overall furniture frequencies: (" + "; ".join(f"{c}: {freq[c] / total:.2f}" for c in vocab if c in freq)
-              + ")")
+    system = Template(GPT["system"]).substitute(
+        vocab=", ".join(vocab),
+        frequencies="; ".join(f"{c}: {freq[c] / total:.2f}" for c in vocab if c in freq))
     msgs = [{"role": "system", "content": system}]
     for e in shots:
         msgs += [{"role": "user", "content": _condition(e)}, {"role": "assistant", "content": "\n".join(e["layout"]) + "\n"}]

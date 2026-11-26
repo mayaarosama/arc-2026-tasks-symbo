@@ -54,7 +54,7 @@ There is no live audience prompt for this task. Live output from a language mode
 ## Before rehearsal
 
 - [ ] Choose one llama.cpp release tag, install it on every machine (CUDA build on the GPUs, CPU build on the CPU box) and record the tag in `requirements/llm.txt`.
-- [ ] Confirm that the Q4_K_M filenames resolve: `python scripts/download_weights.py --machine dgx --task llm --dry-run`, then download.
+- [ ] Confirm that the Q4_K_M filenames resolve: `python -m scripts.common.download_weights --machine dgx --task llm --dry-run`, then download.
 - [ ] `verify_offline.py --task llm` on each machine. If Qwen3.5 fails in the chosen build, switch the settings to `qwen3-4b-2507`.
 - [ ] Rehearse seg7 to fix the stream count per machine: the largest count before tokens per second stops rising.
 - [ ] The CPU-box setup scripts (`scripts/cpu/`) do not install the llm env yet; do it by hand or extend them.

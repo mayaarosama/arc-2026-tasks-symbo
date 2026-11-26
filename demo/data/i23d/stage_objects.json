@@ -10,7 +10,6 @@
     ],
     "exposes": "Baseline: every machine should produce something",
     "input": "data/i23d/inputs/i23d-01.png",
-    "truth": "data/i23d/gso/Ecoforms_Plant_Pot_GP9_SAND/meshes/model.obj",
     "seed": 3001
   },
   {
@@ -24,7 +23,6 @@
     ],
     "exposes": "Texture fidelity and material quality",
     "input": "data/i23d/inputs/i23d-02.png",
-    "truth": "data/i23d/gso/Down_To_Earth_Ceramic_Orchid_Pot_Asst_Blue/meshes/model.obj",
     "seed": 3002
   },
   {
@@ -38,7 +36,6 @@
     ],
     "exposes": "Thin geometry (handle) plus a printed pattern, where low tiers break down",
     "input": "data/i23d/inputs/i23d-03.png",
-    "truth": "data/i23d/gso/ACE_Coffee_Mug_Kristen_16_oz_cup/meshes/model.obj",
     "seed": 3003,
     "_why": "Teapot was the first pick, but from the fixed camera its spout is hidden and its white glaze carries no texture."
   }

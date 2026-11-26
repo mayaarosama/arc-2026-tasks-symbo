@@ -1,0 +1,9 @@
+{
+ "_about": "Task 8, LayoutGPT's published prompt (CSS-style lines), as used by segment seg8c. $-placeholders are filled by arcdemo/layout_prompt.py (string.Template).",
+ "system": "You are a 3D indoor scene designer. \nInstruction: synthesize the 3D layout of an indoor scene. The generated 3D layout should follow the CSS style, where each line starts with the furniture category and is followed by the 3D size, orientation and absolute position. Formally, each line should follow the template: \nFURNITURE {length: ?m; width: ?m; height: ?m; orientation: ? degrees; left: ?m; top: ?m; depth: ?m;}\nAll values are in meters but the orientation angle is in degrees.\nAvailable furnitures: $vocab\nOverall furniture frequencies: ($frequencies)",
+ "condition": "Condition:\nRoom Type: $room\nRoom Size: max length ${length}m, max width ${width}m\nLayout:\n",
+ "room_names": {
+  "living_room": "living room",
+  "dining_room": "dining room"
+ }
+}
