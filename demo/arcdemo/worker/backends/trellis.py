@@ -46,13 +46,16 @@ class Trellis2(Backend):
         os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
         from trellis2.pipelines import Trellis2ImageTo3DPipeline
 
-        pipe = Trellis2ImageTo3DPipeline.from_pretrained(self.repo)
+        self.model = self._build(Trellis2ImageTo3DPipeline)   # no local here: see StableFast3D.load
+
+    def _build(self, pipeline_cls):
+        pipe = pipeline_cls.from_pretrained(self.repo)
         # low_vram=True (upstream default) shuttles sub-models between CPU and GPU, which costs
         # time. Turn it off where memory is plentiful (DGX) via model_overrides in the worker config.
         if "low_vram" in self.spec:
             pipe.low_vram = bool(self.spec["low_vram"])
         pipe.cuda()
-        self.model = pipe
+        return pipe
 
     def describe(self, req: JobRequest) -> dict:
         res = req.resolution or T2.resolution
@@ -97,9 +100,12 @@ class Trellis1(Backend):
         os.environ.setdefault("SPCONV_ALGO", "native")
         from trellis.pipelines import TrellisImageTo3DPipeline
 
-        pipe = TrellisImageTo3DPipeline.from_pretrained(self.repo)
+        self.model = self._build(TrellisImageTo3DPipeline)    # no local here: see StableFast3D.load
+
+    def _build(self, pipeline_cls):
+        pipe = pipeline_cls.from_pretrained(self.repo)
         pipe.cuda()
-        self.model = pipe
+        return pipe
 
     def describe(self, req: JobRequest) -> dict:
         return {"ss_steps": req.ss_steps or T1.ss_steps, "slat_steps": req.slat_steps or T1.slat_steps,

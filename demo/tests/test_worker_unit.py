@@ -3,7 +3,9 @@ auth, file serving, health / env reports, and the guards on every route."""
 from __future__ import annotations
 
 import base64
+import logging
 import time
+import weakref
 
 import pytest
 import yaml
@@ -12,6 +14,7 @@ from fastapi.testclient import TestClient
 from arcdemo.schemas import JobRequest
 from arcdemo.worker import app as W
 from arcdemo.worker import tasks
+from arcdemo.worker.backends.base import Backend
 from tests.helpers import CONFIG, mock_worker_cfg, wait_job
 from tests.test_conductor_unit import png_bytes
 
@@ -93,6 +96,66 @@ def test_job_route_guards(worker_client):
     assert c.post("/jobs", json={"task": "llm", "model": "x", "input_id": "i"}).status_code == 400
     assert c.get("/jobs/nope").status_code == 404
     assert c.post("/jobs/nope/cancel").status_code == 404
+
+
+class _Weights:
+    pass
+
+
+def _fake_backend(generate=None):
+    class Fake(Backend):
+        task = "t2i"
+
+        def load(self):
+            self.model = _Weights()
+
+        def generate(self, req, ctx):
+            generate(self, req, ctx)
+    return Fake
+
+
+def test_unload_warns_when_the_model_is_still_referenced(monkeypatch, tmp_path, caplog):
+    held = []
+    monkeypatch.setattr(W, "backend_class", lambda name: _fake_backend())
+    mm = W.ModelManager(mock_worker_cfg("dgx", tmp_path, tasks=["t2i"]))
+    mm.get("sd15")
+    with caplog.at_level(logging.WARNING, logger="arcdemo.worker"):
+        assert mm.unload("sd15") == ["sd15"]
+        assert "NOT freed" not in caplog.text                 # nothing else held it: freed, no warning
+        mm.get("sd15")
+        held.append(mm.loaded["sd15"].model)                  # a leak: someone keeps the weights
+        mm.unload("sd15")
+    assert "unloaded sd15, but something still references it" in caplog.text
+
+
+def test_out_of_memory_in_a_job_frees_the_model_after_its_traceback_is_gone(monkeypatch, tmp_path):
+    """The traceback holds generate()'s frame (and the model) until the except block ends: the
+    model must be dropped and memory freed after that, not inside it."""
+    seen = {}
+
+    def oom(self, req, ctx):
+        weights = self.model    # noqa: F841 — a local, as real backends have: the traceback keeps it
+        raise MemoryError("out of memory")
+
+    def free_memory():
+        seen["model alive at free"] = seen["ref"]() is not None
+    monkeypatch.setattr(W, "backend_class", lambda name: _fake_backend(oom))
+    monkeypatch.setattr(W, "free_memory", free_memory)
+    cfg = mock_worker_cfg("dgx", tmp_path, tasks=["t2i"])
+    with TestClient(W.create_app(cfg)) as c:
+        c.post("/load", json={"model": "sd15"})
+        end = time.time() + 10
+        while "sd15" not in c.get("/health").json()["loaded"]:
+            assert time.time() < end
+            time.sleep(0.05)
+        mm = next(cell.cell_contents for r in c.app.routes
+                  for cell in (getattr(getattr(r, "endpoint", None), "__closure__", None) or [])
+                  if isinstance(cell.cell_contents, W.ModelManager))
+        seen["ref"] = weakref.ref(mm.loaded["sd15"].model)
+        rid = c.post("/jobs", json={"task": "t2i", "model": "sd15", "input_id": "i", "prompt": "p"}).json()["run_id"]
+        res = wait_job(c, rid)
+        assert res["status"] == "out_of_memory" and c.get("/health").json()["loaded"] == []
+    assert seen["model alive at free"] is False
 
 
 def test_load_then_unload_through_the_api(worker_client):

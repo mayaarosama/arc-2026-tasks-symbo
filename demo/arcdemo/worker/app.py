@@ -20,8 +20,10 @@ import importlib.metadata as md
 import logging
 import os
 import platform
+import subprocess
 import threading
 import time
+import weakref
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -110,14 +112,20 @@ class ModelManager:
         with self.lock:
             keys = [key] if key else [k for k in self.loaded
                                       if not keep_task or self.cfg["models"][k]["task"] != keep_task]
-            gone = []
+            gone, watched, b = [], [], None
             for k in keys:
                 b = self.loaded.pop(k, None)
                 if b is not None:
+                    watched.append((k, _watch(b.model)))
                     b.unload()
                     gone.append(k)
                     log.info("unloaded %s", k)
+            b = None            # this frame must not keep the last backend alive while freeing
             free_memory()
+            for k, ref in watched:
+                if ref is not None and ref() is not None:
+                    log.warning("unloaded %s, but something still references it: its memory is NOT freed "
+                                "(docs/Known issues.md, 'Memory not freed after unload')", k)
             return gone
 
     def ensure(self, key: str) -> Backend:
@@ -128,6 +136,20 @@ class ModelManager:
                 for k in [k for k in self.loaded if k != key]:
                     self.unload(k)
             return self.get(key)
+
+
+def _watch(model) -> Optional[weakref.ref]:
+    """A weak reference to a backend's model (the first pipeline of a list), to check after unload
+    that it was really freed. None for a server process: its memory goes when the process exits."""
+    for obj in ([model] + [x for item in model for x in (item if isinstance(item, tuple) else (item,))]
+                if isinstance(model, (list, tuple)) else [model]):
+        if obj is None or isinstance(obj, (subprocess.Popen, str)):
+            continue
+        try:
+            return weakref.ref(obj)
+        except TypeError:
+            continue
+    return None
 
 
 class Job:
@@ -176,6 +198,7 @@ class JobRunner:
 
     def _run(self, job: Job) -> None:
         req, r = job.req, job.result
+        failed = False
         try:
             tasks.prepare_inputs(req, Path(self.cfg["results_dir"]))   # off the clock (i23d: an upload)
             r.status = "loading"
@@ -207,11 +230,11 @@ class JobRunner:
             else:
                 r.status = "ok"
         except BaseException as e:  # noqa: BLE001 — every failure must come back as a status
+            failed = True
             r.message = _short(e)
             if is_oom(e):
                 r.status = "out_of_memory"
                 log.warning("[%s] out of memory: %s", req.run_id[:6], r.message)
-                self.models.unload(req.model)
             else:
                 r.status = "error"
                 log.exception("[%s] job failed", req.run_id[:6])
@@ -219,6 +242,12 @@ class JobRunner:
             r.elapsed_seconds = round(job.clock.now(), 3)
             log.info("[%s] %s | %d/%s outputs | all=%ss | peak=%s MB", req.run_id[:6], r.status,
                      r.completed, r.requested or "?", r.all_outputs_seconds, r.peak_memory_mb)
+        # Only now is the exception's traceback gone (it held the model through the backend's frames),
+        # so only now can the memory be freed: drop the model after an out-of-memory, else just free.
+        if r.status == "out_of_memory":
+            self.models.unload(req.model)
+        elif failed:
+            free_memory()
 
 
 def memory_report() -> dict:
@@ -336,10 +365,15 @@ def create_app(cfg: dict) -> FastAPI:
             try:
                 models.ensure(req.model)
                 models.last_error = None
+                return
             except BaseException as e:  # noqa: BLE001 — already logged by ModelManager.get
                 models.last_error = f"load {req.model}: {_short(e)}"
-                if is_oom(e):
-                    models.unload(req.model)
+                oom = is_oom(e)
+            # Out of the except block: its traceback held the half-built model until now.
+            if oom:
+                models.unload(req.model)
+            else:
+                free_memory()
         threading.Thread(target=do, daemon=True).start()
         return {"model": req.model, "status": "loading"}
 

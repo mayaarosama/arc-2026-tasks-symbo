@@ -125,7 +125,7 @@ The new tests cover:
 | 8 | README said "34 tests" | **Fixed** (README rewritten) |
 | 9 | The conductor imported the LLM prompt from worker code | **Fixed.** Both sides read `data/prompts/llm_system.txt` through `arcdemo/prompts.py` |
 | 10 | Duplicate in-function imports | **Fixed,** with every other in-function import (Step 1) |
-| 11 | Orphaned `llama-server` holding about 6.8 GB of VRAM | **Open, not touched** (not started by this session). Listed in Known issues with the `pkill` line |
+| 11 | Orphaned `llama-server` holding about 6.8 GB of VRAM | **Gone:** `start_workstation_show.sh` stops orphaned servers when it starts (Part 3) |
 
 ### Found during the clean-up
 
@@ -157,3 +157,33 @@ Values that stay in code, each named at the top of its module:
 - **The review's own measures:** `compare_layout.py`.
 - **The served URL routes:** `conductor/urls.py`.
 - **Room descriptions generated from geometry:** `describe_room`.
+
+## Part 3 — Memory between tasks (2026-11-26)
+
+Reported: memory is not cleared before the next task's models load. Measured on the workstation
+show (`start_workstation_show.sh`: 5 GPU and 5 CPU workers), playing the segments in show order
+through the conductor and reading each worker's PSS and VRAM after every Prepare and round.
+
+**Prepare itself was right:** each machine's worker unloads its model before the next one loads.
+The unloads did not free everything, for three reasons:
+
+| What | Effect | Fix |
+| --- | --- | --- |
+| SF3D and TRELLIS import their library inside `load()`, and that library keeps the call stack. `load()`'s local `model` stayed alive in that kept frame after `unload()` | The GPU 3D worker kept **4.0 GB of VRAM** and the CPU 3D worker **4.5 GB of RAM** for the rest of the show | `load()` builds the model in a `_build()` helper and holds no local (`sf3d.py`, `trellis.py`; `diffusers_t2i.py` too, as a precaution). Test: `test_unload_frees_the_model_even_when_a_library_keeps_the_load_stack`, which fails on the old code |
+| After a failed job or load (out of memory), the model was unloaded **inside** the `except` block, while its traceback still held the model, and memory was never freed again afterwards | VRAM stayed reserved in torch's cache, and RAM stayed with the process | The unload and the free now run after the `except` block (`worker/app.py`). Test: `test_out_of_memory_in_a_job_frees_the_model_after_its_traceback_is_gone` |
+| Importing torch with diffusers starts torch's compile-worker pool: 16 idle processes per t2i worker | ~0.4 GB of real memory per t2i worker. RSS also counted these processes' shared pages 17 times, so the t2i workers looked 6 GB larger than they were | `TORCHINDUCTOR_COMPILE_THREADS=1`, set by the worker before torch is imported (`config/defaults.yaml` `worker.torch_compile_threads`) |
+
+The worker now also checks each unload: if the model is still referenced afterwards, it logs
+`unloaded <model>, but something still references it: its memory is NOT freed`.
+
+After the fixes, the trace `seg0 → seg3 → seg6 → seg8 → seg8b → seg2 → seg3 → seg6`:
+
+| Point | RAM available | VRAM used | The 3D workers after their unload |
+| --- | --- | --- | --- |
+| Start | 20.9 GB | 0.4 GB | — |
+| `seg6` prepared, first time | 15.8 GB | 4.5 GB | GPU 2.2 GB RAM / 0.3 GB VRAM, CPU 0.7 GB (before the fix: 4.0 GB VRAM, 4.5 GB RAM) |
+| `seg6` prepared, second time | 15.7 GB | 4.5 GB | GPU 2.0 GB / 0.3 GB, CPU 0.6 GB |
+
+Nothing builds up from task to task: only the task on stage holds memory. The busiest point is a
+3D round, with SF3D loaded on both machines at once (9.8 GB of RAM still available). No worker
+logged the warning, and the default suite passes (one failure: the missing music clip, finding 1).

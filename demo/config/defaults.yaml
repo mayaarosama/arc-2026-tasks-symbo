@@ -50,6 +50,8 @@ worker:
   env_hash_exclude: [torch, nvidia-, triton]   # packages that legitimately differ between machines
   env_report_packages: [diffusers, transformers, accelerate, bitsandbytes]
   max_upload_mb: 20                # an uploaded input picture (image_b64), after the conductor normalised it
+  torch_compile_threads: 1         # TORCHINDUCTOR_COMPILE_THREADS: 1 = no compile-worker pool (16 processes,
+                                   # ~0.4 GB per t2i worker); the demo never calls torch.compile
 
 moderation:                        # Task 1 live prompt (the terms themselves: config/blocklist.txt)
   max_prompt_chars: 300

@@ -38,6 +38,11 @@ class DiffusersT2I(Backend):
     def load(self) -> None:
         if StableDiffusion3Pipeline is None:
             raise ModuleNotFoundError("diffusers / torch are not installed in this venv (requirements/t2i.txt)")
+        # Built in a helper, never held in a local here: a frame that a library keeps alive (a
+        # captured stack) would otherwise keep the weights after unload.
+        self.model = self._build()          # [(device, pipeline), ...]
+
+    def _build(self) -> list:
         pipes = []
         self._dtypes: list[str] = []
         is_sd3 = "stable-diffusion-3" in self.repo
@@ -66,7 +71,7 @@ class DiffusersT2I(Backend):
                 pipe(prompt="warm-up", num_inference_steps=2, generator=torch.Generator("cpu").manual_seed(0))
             pipes.append((dev, pipe))
             self._dtypes.append(str(dtype).replace("torch.", ""))
-        self.model = pipes          # [(device, pipeline), ...]
+        return pipes
 
     def describe(self, req: JobRequest) -> dict:
         return {

@@ -51,11 +51,15 @@ class StableFast3D(Backend):
             sys.path.insert(0, str(clone))
         from sf3d.system import SF3D
 
-        model = SF3D.from_pretrained(self.repo, config_name="config.yaml",
-                                     weight_name="model.safetensors")
+        # Built in a helper, never held in a local here: a library imported above keeps this frame
+        # alive (it captures the stack at import), and a local would keep the weights after unload.
+        self.model = self._build(SF3D, dev)
+
+    def _build(self, sf3d_cls, dev: str):
+        model = sf3d_cls.from_pretrained(self.repo, config_name="config.yaml", weight_name="model.safetensors")
         model.to(dev)
         model.eval()
-        self.model = model
+        return model
 
     def describe(self, req: JobRequest) -> dict:
         dev = self.devices[0]

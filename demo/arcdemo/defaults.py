@@ -67,6 +67,7 @@ class Worker(_Section):
     env_hash_exclude: list[str]
     env_report_packages: list[str]
     max_upload_mb: int
+    torch_compile_threads: int
 
 
 class Moderation(_Section):

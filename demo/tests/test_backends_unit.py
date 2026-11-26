@@ -11,6 +11,7 @@ import textwrap
 import threading
 import time
 import types
+import weakref
 from pathlib import Path
 
 import httpx
@@ -249,6 +250,55 @@ def test_sf3d_loads_on_cpu_and_exports_a_glb(monkeypatch, torch, tmp_path):
 
 
 # ------------------------------------------------------------------ Task 3: Stable Audio 3
+class _StackKeeper(types.ModuleType):
+    """A stand-in library that, like a real one (typeguard, pulled in by SF3D's jaxtyping), keeps the
+    stack it was imported from: every frame from load() up stays alive with its local variables."""
+    kept: list = []
+
+    def __init__(self, name, **attrs):
+        super().__init__(name)
+        self._attrs = attrs
+
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
+        f = sys._getframe(1)
+        while f is not None:
+            _StackKeeper.kept.append(f)
+            f = f.f_back
+        return self._attrs[name]
+
+
+@pytest.mark.parametrize("which", ["sf3d", "trellis2", "trellis1"])
+def test_unload_frees_the_model_even_when_a_library_keeps_the_load_stack(which, monkeypatch, torch, trellis):
+    """The SF3D leak: 4 GB of VRAM stayed after unload, held by load()'s local `model` in a frame
+    that the library kept. load() must not hold the model in a local."""
+    class Model:
+        @classmethod
+        def from_pretrained(cls, *a, **kw):
+            return cls()
+
+        def to(self, dev):
+            return self
+
+        cuda = eval = lambda self: self
+    if which == "sf3d":
+        monkeypatch.setitem(sys.modules, "sf3d", types.ModuleType("sf3d"))
+        monkeypatch.setitem(sys.modules, "sf3d.system", _StackKeeper("sf3d.system", SF3D=Model))
+        b = StableFast3D("sf3d", {"repo": "r"}, {}, ["cpu"])
+    else:
+        pkg = "trellis2" if which == "trellis2" else "trellis"
+        cls_name = "Trellis2ImageTo3DPipeline" if which == "trellis2" else "TrellisImageTo3DPipeline"
+        monkeypatch.setitem(sys.modules, f"{pkg}.pipelines", _StackKeeper(f"{pkg}.pipelines", **{cls_name: Model}))
+        b = (Trellis2 if which == "trellis2" else Trellis1)(which, {"repo": "r"}, {}, ["cuda:0"])
+    monkeypatch.setattr(_StackKeeper, "kept", [])
+    b.load()
+    assert _StackKeeper.kept, "the stand-in library did not keep the stack"
+    ref = weakref.ref(b.model)
+    b.unload()
+    assert ref() is None, "the model outlived unload(): a kept frame still references it"
+
+
 def test_stable_audio3_throughput_loop_with_a_fake_library(monkeypatch, torch, tmp_path):
 
     class Audio:
