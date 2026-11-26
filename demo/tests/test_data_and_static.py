@@ -77,7 +77,7 @@ def test_stage_inputs_have_the_required_fields_and_files(task):
         if item["id"] == "live":
             continue
         assert REQUIRED[task] <= set(item), (rel, item["id"])
-        for key in ("input", "truth", "audio"):
+        for key in ("input", "audio"):
             if item.get(key):
                 assert (ROOT / item[key]).exists(), (rel, item["id"], item[key])
 
@@ -100,9 +100,10 @@ def test_layout_exemplars_are_valid_rooms():
         assert all(parse_line(ln, e) is not None for ln in e["v3"]), e["id"]
 
 
-def test_gso_scans_named_as_truth_exist():
+def test_stage_objects_are_not_scored():
+    # Scoring against the GSO scans was dropped on purpose: the scans are no longer in the repo.
     for item in json.loads((ROOT / "data/i23d/stage_objects.json").read_text()):
-        assert (ROOT / item["truth"]).is_file(), item["id"]
+        assert "truth" not in item, item["id"]
 
 
 # ------------------------------------------------------------------ static UI

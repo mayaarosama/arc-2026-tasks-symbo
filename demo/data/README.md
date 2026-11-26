@@ -9,7 +9,7 @@ and every machine needs the same copy. The conductor serves this folder at `/med
 | File | Format (one JSON list, one object per input) |
 | --- | --- |
 | `t2i/stage_prompts.json` | `id`, `label`, `seed`, `prompt`, `exposes`. `id: live` is the audience prompt, typed by the operator |
-| `i23d/stage_objects.json` | `id`, `label`, `seed`, `input` (the 512 × 512 RGBA render), `truth` (the GSO scan, for scoring), `tier`, `gso`, `alternates` |
+| `i23d/stage_objects.json` | `id`, `label`, `seed`, `input` (the 512 × 512 RGBA render), `tier`, `gso`, `alternates` |
 | `music/stage_inputs.json` | `id`, `label`, `seed`, `prompt`, `mode` (text or continuation), `length_s`, and `audio` for a continuation |
 | `llm/stage_prompts.json` | `id`, `label`, `seed`, `prompt` |
 | `layout/stage_rooms.json` | `id`, `label`, `seed`, `room_type`, `floor_plan` ([[x, y], ...] in metres), `door` ([x, y] on the outline), `max_objects` |
@@ -20,7 +20,7 @@ and every machine needs the same copy. The conductor serves this folder at `/med
 | --- | --- |
 | `t2i/live_fallback_prompts.json` | `{"prompts": [...]}`: vetted spare prompts offered on the operator page (path: `config/defaults.yaml` `stage.spare_prompts`) |
 | `t2i/rehearsal_prompts.json` | Rehearsal prompts picked from PartiPrompts (`python -m scripts.t2i.build_rehearsal_prompts`) |
-| `i23d/inputs/`, `i23d/gso/` | The rendered inputs and the GSO scans with their textures (`python -m scripts.i23d.prepare_gso`); CC BY 4.0 |
+| `i23d/inputs/` | The rendered inputs (`python -m scripts.i23d.prepare_gso`, which downloads the GSO scans into the git-ignored `i23d/gso_cache/`); CC BY 4.0. Outputs are not scored against the scans |
 | `i23d/candidates.png`, `i23d/stage_inputs.png` | Contact sheets of the candidates and of the chosen inputs |
 | `i23d/upload_rules.json` | What an uploaded picture must be like, shown next to the upload box; `$max_mb`-style placeholders come from `config/defaults.yaml` `i23d.upload` |
 | `layout/furniture.json` | The furniture catalogue: per class its size, `place` (wall or free) and 3D model file; per room type the classes it may hold; `assets_dir` |

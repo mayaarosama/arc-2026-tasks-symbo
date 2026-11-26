@@ -1,9 +1,9 @@
 """Prepare the image-to-3D inputs from Google Scanned Objects (CC BY 4.0).
 
 For each object in data/i23d/stage_objects.json:
-  1. download the GSO model from Gazebo Fuel (cached in data/i23d/gso_cache/),
-  2. extract it to data/i23d/truth/<id>/  (the scanned mesh = ground truth for scoring),
-  3. render ONE fixed view, 512x512 RGBA with a transparent background -> data/i23d/inputs/<id>.png.
+  1. download the GSO model from Gazebo Fuel and unpack it in data/i23d/gso_cache/ (git-ignored;
+     the scans are not kept in the repo, and the outputs are not scored against them),
+  2. render ONE fixed view, 512x512 RGBA with a transparent background -> data/i23d/inputs/<id>.png.
      A render, not a photo, so the input is byte-identical on every machine; real alpha, so
      TRELLIS/SF3D skip background removal.
 
@@ -54,7 +54,7 @@ def fetch(name: str) -> Path:
         r.raise_for_status()
         zpath.parent.mkdir(parents=True, exist_ok=True)
         zpath.write_bytes(r.content)
-    out = DATA / "gso" / name
+    out = DATA / "gso_cache" / name
     if not (out / "meshes" / "model.obj").exists():
         with zipfile.ZipFile(zpath) as z:
             z.extractall(out)
@@ -139,13 +139,11 @@ def main() -> None:
         inp = ROOT / obj["input"]
         inp.parent.mkdir(parents=True, exist_ok=True)
         img.save(inp)
-        obj["truth"] = str((folder / "meshes" / "model.obj").relative_to(ROOT)).replace("\\", "/")
-        log.info("%s %s -> %s (truth %s)", obj["id"], obj["gso"], obj["input"], obj["truth"])
+        log.info("%s %s -> %s", obj["id"], obj["gso"], obj["input"])
         sheet.append((f'{obj["id"]} {obj["gso"]}', img))
         if a.candidates:
             for alt in obj.get("alternates", []):
                 sheet.append((f'{obj["id"]} alt: {alt}', render(load_upright(fetch(alt)))))
-    objects_path.write_text(json.dumps(objects, indent=2), encoding="utf-8")
     contact_sheet(sheet, DATA / ("candidates.png" if a.candidates else "stage_inputs.png"))
 
 
